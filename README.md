@@ -67,6 +67,10 @@ helm install sandbox-connector ./charts/sandbox-connector \
 
 ### Installing the Element Template
 
+**Option A: Combined Template (All Tenants)**
+
+Use `element-templates/sandbox-cli-connector.json` for a single template that supports all tenants:
+
 1. Copy `element-templates/sandbox-cli-connector.json` to your Camunda Modeler templates folder:
    - **macOS**: `~/Library/Application Support/camunda-modeler/resources/element-templates/`
    - **Windows**: `%APPDATA%/camunda-modeler/resources/element-templates/`
@@ -74,7 +78,33 @@ helm install sandbox-connector ./charts/sandbox-connector \
 
 2. Restart Camunda Modeler
 
-3. In your BPMN diagram, add a Service Task and select "Sandbox CLI Executor" from the template catalog
+3. In your BPMN diagram, add a Service Task and select "Sandbox CLI Connector" from the template catalog
+
+**Option B: Tenant-Specific Templates (Recommended for Teams)**
+
+For teams that only need access to specific security profiles, use the per-tenant templates:
+
+```
+element-templates/
+├── sandbox-cli-connector.json              # All tenants
+├── sandbox-cli-connector-default.json      # Data processing only
+├── sandbox-cli-connector-development.json  # Development tools
+├── sandbox-cli-connector-cloud-ops.json    # Cloud CLIs
+├── sandbox-cli-connector-infra-automation.json  # Terraform
+└── sandbox-cli-connector-monitoring.json   # Read-only monitoring
+```
+
+Copy only the templates your team needs. This provides a cleaner UI with fewer options.
+
+**Regenerating Templates**
+
+When you modify `connector-core/src/main/resources/tenant/policies.yaml`, regenerate the templates:
+
+```bash
+python3 scripts/generate-element-templates.py
+```
+
+This ensures element templates always match your security policies.
 
 ## Element Template Properties
 
@@ -116,6 +146,48 @@ helm install sandbox-connector ./charts/sandbox-connector \
 | **Retries** | Dropdown | 3 | Retry count for transient failures. Uses exponential backoff. Set to 0 for no retries. |
 
 ## Tenant Profiles
+
+### What are Tenants?
+
+Tenants (also called "Security Profiles") are **pre-configured security policies** that define:
+
+1. **Which tools can be used** - Each tenant has an allowlist of CLI tools
+2. **What operations are blocked** - Dangerous arguments (like `delete`, `--upload-file`) can be blocked per tool
+3. **Resource limits** - CPU, memory, timeout, and concurrency limits
+4. **Network access** - Which external hosts can be reached
+5. **Secrets** - Which credentials are available to the tools
+
+**Why use tenants?**
+
+- **Principle of Least Privilege**: Users only get access to tools they need
+- **Blast Radius Reduction**: If a process is compromised, damage is limited to what the tenant allows
+- **Compliance**: Different teams/environments can have different security postures
+- **Resource Isolation**: Prevent one workflow from consuming all resources
+
+**How it works in the Element Template:**
+
+When you select a tenant/security profile in the Camunda Modeler, the tool dropdown automatically shows only the tools allowed for that tenant. This prevents users from accidentally selecting tools they don't have permission to use.
+
+### Available Element Templates
+
+We provide two types of element templates:
+
+| Template | File | Use Case |
+|----------|------|----------|
+| **Combined** | `sandbox-cli-connector.json` | Shows all tenants in a dropdown. Tool list changes based on selection. |
+| **Tenant-specific** | `sandbox-cli-connector-{tenant}.json` | Pre-configured for one tenant. Simpler UI, only shows allowed tools. |
+
+**Generate templates from policies:**
+
+When you modify `policies.yaml`, regenerate the element templates:
+
+```bash
+python3 scripts/generate-element-templates.py
+```
+
+This ensures the element templates always match your security policies.
+
+### Tenant Overview
 
 Each tenant profile is a security preset that defines allowed tools, resource limits, and network policies.
 

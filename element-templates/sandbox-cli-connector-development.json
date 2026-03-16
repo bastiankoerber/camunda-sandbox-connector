@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/@camunda/zeebe-element-templates-json-schema/resources/schema.json",
-  "name": "Sandbox CLI Connector",
-  "id": "io.camunda.connectors.SandboxCLI.v1",
+  "name": "Sandbox CLI - Development Environment",
+  "id": "io.camunda.connectors.SandboxCLI.development.v1",
   "version": 7,
   "appliesTo": [
     "bpmn:Task"
@@ -12,7 +12,7 @@
   "icon": {
     "contents": "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%23333' d='M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zm-2-1h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z'/%3E%3C/svg%3E"
   },
-  "description": "Execute CLI commands securely in a sandboxed environment with nsjail isolation",
+  "description": "Execute curl, jq, yq... in sandboxed environment (Development Environment profile)",
   "documentationRef": "https://github.com/bastiankoerber/camunda-sandbox-connector#readme",
   "category": {
     "id": "connectors",
@@ -72,38 +72,12 @@
     },
     {
       "id": "tenantId",
-      "label": "Security Profile",
-      "description": "Select the security profile that defines available tools and permissions",
-      "tooltip": "Each profile has different tools and restrictions:\n\n- Default Tenant: jq, yq, grep...\n- Development Environment: curl, jq, yq...\n- Cloud Operations: aws, gcloud, az...\n- Infrastructure Automation: terraform, jq, yq...\n- Read-Only Monitoring: kubectl, curl, jq...",
-      "type": "Dropdown",
-      "group": "tenant",
+      "type": "Hidden",
+      "value": "development",
       "binding": {
         "type": "zeebe:input",
         "name": "tenantId"
-      },
-      "value": "default",
-      "choices": [
-        {
-          "name": "Default Tenant (jq, yq, grep, sed, +2 more)",
-          "value": "default"
-        },
-        {
-          "name": "Development Environment (curl, jq, yq, git, +2 more)",
-          "value": "development"
-        },
-        {
-          "name": "Cloud Operations (aws, gcloud, az, kubectl, +2 more)",
-          "value": "cloud-ops"
-        },
-        {
-          "name": "Infrastructure Automation (terraform, jq, yq)",
-          "value": "infra-automation"
-        },
-        {
-          "name": "Read-Only Monitoring (kubectl, curl, jq)",
-          "value": "monitoring"
-        }
-      ]
+      }
     },
     {
       "id": "executionMode",
@@ -127,57 +101,6 @@
           "value": "script"
         }
       ]
-    },
-    {
-      "id": "selectedTool_default",
-      "label": "Tool",
-      "description": "Select the CLI tool to execute",
-      "tooltip": "Available tools for Default Tenant:\n\n- jq: Query and transform JSON data\n- yq: Query and transform YAML data\n- grep: Search text using patterns\n- sed: Transform text streams\n- awk: Pattern scanning and processing\n- safe-python3: Python interpreter with security restrictions",
-      "type": "Dropdown",
-      "group": "tool",
-      "binding": {
-        "type": "zeebe:input",
-        "name": "selectedTool"
-      },
-      "value": "jq",
-      "choices": [
-        {
-          "name": "jq - JSON processor",
-          "value": "jq"
-        },
-        {
-          "name": "yq - YAML processor",
-          "value": "yq"
-        },
-        {
-          "name": "grep - Pattern matching",
-          "value": "grep"
-        },
-        {
-          "name": "sed - Stream editor",
-          "value": "sed"
-        },
-        {
-          "name": "awk - Text processing",
-          "value": "awk"
-        },
-        {
-          "name": "safe-python3 - Secured Python",
-          "value": "safe-python3"
-        }
-      ],
-      "condition": {
-        "allMatch": [
-          {
-            "property": "tenantId",
-            "equals": "default"
-          },
-          {
-            "property": "executionMode",
-            "equals": "command"
-          }
-        ]
-      }
     },
     {
       "id": "selectedTool_development",
@@ -219,139 +142,6 @@
       ],
       "condition": {
         "allMatch": [
-          {
-            "property": "tenantId",
-            "equals": "development"
-          },
-          {
-            "property": "executionMode",
-            "equals": "command"
-          }
-        ]
-      }
-    },
-    {
-      "id": "selectedTool_cloud_ops",
-      "label": "Tool",
-      "description": "Select the CLI tool to execute",
-      "tooltip": "Available tools for Cloud Operations:\n\n- aws: Amazon Web Services CLI\n- gcloud: Google Cloud Platform CLI\n- az: Microsoft Azure CLI\n- kubectl: Kubernetes cluster management\n- curl: Transfer data via HTTP/HTTPS\n- jq: Query and transform JSON data",
-      "type": "Dropdown",
-      "group": "tool",
-      "binding": {
-        "type": "zeebe:input",
-        "name": "selectedTool"
-      },
-      "value": "aws",
-      "choices": [
-        {
-          "name": "aws - AWS CLI",
-          "value": "aws"
-        },
-        {
-          "name": "gcloud - Google Cloud CLI",
-          "value": "gcloud"
-        },
-        {
-          "name": "az - Azure CLI",
-          "value": "az"
-        },
-        {
-          "name": "kubectl - Kubernetes CLI",
-          "value": "kubectl"
-        },
-        {
-          "name": "curl - HTTP client",
-          "value": "curl"
-        },
-        {
-          "name": "jq - JSON processor",
-          "value": "jq"
-        }
-      ],
-      "condition": {
-        "allMatch": [
-          {
-            "property": "tenantId",
-            "equals": "cloud-ops"
-          },
-          {
-            "property": "executionMode",
-            "equals": "command"
-          }
-        ]
-      }
-    },
-    {
-      "id": "selectedTool_infra_automation",
-      "label": "Tool",
-      "description": "Select the CLI tool to execute",
-      "tooltip": "Available tools for Infrastructure Automation:\n\n- terraform: Terraform IaC tool\n- jq: Query and transform JSON data\n- yq: Query and transform YAML data",
-      "type": "Dropdown",
-      "group": "tool",
-      "binding": {
-        "type": "zeebe:input",
-        "name": "selectedTool"
-      },
-      "value": "terraform",
-      "choices": [
-        {
-          "name": "terraform - Infrastructure as Code",
-          "value": "terraform"
-        },
-        {
-          "name": "jq - JSON processor",
-          "value": "jq"
-        },
-        {
-          "name": "yq - YAML processor",
-          "value": "yq"
-        }
-      ],
-      "condition": {
-        "allMatch": [
-          {
-            "property": "tenantId",
-            "equals": "infra-automation"
-          },
-          {
-            "property": "executionMode",
-            "equals": "command"
-          }
-        ]
-      }
-    },
-    {
-      "id": "selectedTool_monitoring",
-      "label": "Tool",
-      "description": "Select the CLI tool to execute",
-      "tooltip": "Available tools for Read-Only Monitoring:\n\n- kubectl: Kubernetes cluster management\n- curl: Transfer data via HTTP/HTTPS\n- jq: Query and transform JSON data",
-      "type": "Dropdown",
-      "group": "tool",
-      "binding": {
-        "type": "zeebe:input",
-        "name": "selectedTool"
-      },
-      "value": "kubectl",
-      "choices": [
-        {
-          "name": "kubectl - Kubernetes CLI",
-          "value": "kubectl"
-        },
-        {
-          "name": "curl - HTTP client",
-          "value": "curl"
-        },
-        {
-          "name": "jq - JSON processor",
-          "value": "jq"
-        }
-      ],
-      "condition": {
-        "allMatch": [
-          {
-            "property": "tenantId",
-            "equals": "monitoring"
-          },
           {
             "property": "executionMode",
             "equals": "command"
@@ -502,25 +292,37 @@
         "type": "zeebe:input",
         "name": "networkAccess"
       },
-      "value": "NONE",
+      "value": "RESTRICTED",
       "choices": [
         {
           "name": "None - No network access",
           "value": "NONE"
+        },
+        {
+          "name": "Internal - Cluster only",
+          "value": "INTERNAL"
+        },
+        {
+          "name": "Restricted - Allowlisted hosts",
+          "value": "RESTRICTED"
+        },
+        {
+          "name": "Full - Any destination",
+          "value": "FULL"
         }
       ]
     },
     {
       "id": "timeoutSeconds",
       "label": "Timeout",
-      "description": "Maximum execution time (max: 300s for this profile)",
+      "description": "Maximum execution time (max: 120s for this profile)",
       "type": "Dropdown",
       "group": "security",
       "binding": {
         "type": "zeebe:input",
         "name": "timeoutSeconds"
       },
-      "value": "30",
+      "value": "120",
       "choices": [
         {
           "name": "10 seconds",
@@ -537,24 +339,20 @@
         {
           "name": "120 seconds",
           "value": "120"
-        },
-        {
-          "name": "300 seconds",
-          "value": "300"
         }
       ]
     },
     {
       "id": "memoryLimitMb",
       "label": "Memory Limit",
-      "description": "Maximum RAM (max: 1024MB for this profile)",
+      "description": "Maximum RAM (max: 512MB for this profile)",
       "type": "Dropdown",
       "group": "security",
       "binding": {
         "type": "zeebe:input",
         "name": "memoryLimitMb"
       },
-      "value": "256",
+      "value": "512",
       "choices": [
         {
           "name": "128 MB",
@@ -567,10 +365,6 @@
         {
           "name": "512 MB",
           "value": "512"
-        },
-        {
-          "name": "1024 MB",
-          "value": "1024"
         }
       ]
     },
