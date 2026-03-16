@@ -1,22 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_SimplePython" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" 
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0" 
+                  id="Definitions_SimplePython" 
+                  targetNamespace="http://bpmn.io/schema/bpmn" 
+                  exporter="Camunda Modeler" 
+                  exporterVersion="5.44.0" 
+                  modeler:executionPlatform="Camunda Cloud" 
+                  modeler:executionPlatformVersion="8.9.0">
+  
   <bpmn:process id="simple-python-test" name="Simple Python Test" isExecutable="true">
     <bpmn:startEvent id="StartEvent" name="Start">
       <bpmn:outgoing>Flow1</bpmn:outgoing>
     </bpmn:startEvent>
     
-    <bpmn:serviceTask id="PythonTask" name="Run Python Script">
+    <!-- Simple Python script execution using default tenant -->
+    <bpmn:serviceTask id="PythonTask" name="Run Python Script" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
         <zeebe:ioMapping>
+          <zeebe:input source="execute" target="action" />
+          <zeebe:input source="default" target="tenantId" />
+          <zeebe:input source="script" target="executionMode" />
+          <zeebe:input source="safe-python3" target="selectedTool" />
           <zeebe:input source="python" target="scriptLanguage" />
           <zeebe:input source="print('Hello from Python!')
 import math
 result = math.sqrt(16)
 print('Square root of 16 is:', result)" target="scriptContent" />
+          <zeebe:input source="=[selectedTool]" target="allowedTools" />
+          <zeebe:input source="NONE" target="networkAccess" />
           <zeebe:input source="30" target="timeoutSeconds" />
           <zeebe:input source="256" target="memoryLimitMb" />
-          <zeebe:input source="NONE" target="networkAccess" />
         </zeebe:ioMapping>
         <zeebe:taskHeaders>
           <zeebe:header key="resultVariable" value="pythonResult" />
@@ -38,12 +56,19 @@ print('Square root of 16 is:', result)" target="scriptContent" />
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="simple-python-test">
       <bpmndi:BPMNShape id="StartEvent_di" bpmnElement="StartEvent">
         <dc:Bounds x="152" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="158" y="145" width="24" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="PythonTask_di" bpmnElement="PythonTask">
         <dc:Bounds x="250" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_di" bpmnElement="EndEvent">
         <dc:Bounds x="412" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="420" y="145" width="20" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow1_di" bpmnElement="Flow1">
         <di:waypoint x="188" y="120" />

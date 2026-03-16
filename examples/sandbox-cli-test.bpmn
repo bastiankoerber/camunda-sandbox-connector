@@ -1,22 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_SandboxTest" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" 
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0" 
+                  id="Definitions_SandboxTest" 
+                  targetNamespace="http://bpmn.io/schema/bpmn" 
+                  exporter="Camunda Modeler" 
+                  exporterVersion="5.44.0" 
+                  modeler:executionPlatform="Camunda Cloud" 
+                  modeler:executionPlatformVersion="8.9.0">
+  
   <bpmn:process id="sandbox-cli-test" name="Sandbox CLI Connector Test" isExecutable="true">
     <bpmn:startEvent id="StartEvent" name="Start Test">
       <bpmn:outgoing>Flow_Start_To_Fetch</bpmn:outgoing>
     </bpmn:startEvent>
     
-    <bpmn:serviceTask id="FetchAndParseAPI" name="Fetch JSON with curl" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="1">
+    <!-- Task 1: Fetch JSON using curl (development tenant allows curl with FULL network) -->
+    <bpmn:serviceTask id="FetchAndParseAPI" name="Fetch JSON with curl" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
         <zeebe:ioMapping>
-          <zeebe:input source="curl -s https://httpbin.org/json" target="command" />
-          <zeebe:input source="=[&#34;curl&#34;]" target="allowedTools" />
-          <zeebe:input source="={&#34;curl&#34;: &#34;latest&#34;}" target="toolVersions" />
+          <zeebe:input source="execute" target="action" />
+          <zeebe:input source="development" target="tenantId" />
+          <zeebe:input source="command" target="executionMode" />
+          <zeebe:input source="curl" target="selectedTool" />
+          <zeebe:input source="-s https://httpbin.org/json" target="commandArguments" />
+          <zeebe:input source="=selectedTool + &quot; &quot; + commandArguments" target="command" />
+          <zeebe:input source="=[selectedTool]" target="allowedTools" />
+          <zeebe:input source="FULL" target="networkAccess" />
           <zeebe:input source="30" target="timeoutSeconds" />
           <zeebe:input source="256" target="memoryLimitMb" />
-          <zeebe:input source="1000" target="cpuLimitMillis" />
-          <zeebe:input source="FULL" target="networkAccess" />
-          <zeebe:input source="development" target="tenantId" />
         </zeebe:ioMapping>
         <zeebe:taskHeaders>
           <zeebe:header key="resultVariable" value="sandboxResult" />
@@ -26,12 +41,15 @@
       <bpmn:outgoing>Flow_Fetch_To_Python</bpmn:outgoing>
     </bpmn:serviceTask>
     
-    <bpmn:serviceTask id="PythonAnalytics" name="Python Analytics" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="6">
+    <!-- Task 2: Run Python analytics script (development tenant allows safe-python3) -->
+    <bpmn:serviceTask id="PythonAnalytics" name="Python Analytics" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
         <zeebe:ioMapping>
-          <zeebe:input source="safe-python3" target="tool" />
+          <zeebe:input source="execute" target="action" />
+          <zeebe:input source="development" target="tenantId" />
           <zeebe:input source="script" target="executionMode" />
+          <zeebe:input source="safe-python3" target="selectedTool" />
           <zeebe:input source="python" target="scriptLanguage" />
           <zeebe:input source="import json
 import math
@@ -76,11 +94,10 @@ result = dict(
 )
 
 print(json.dumps(result, indent=2))" target="scriptContent" />
-          <zeebe:input source="=[&#34;safe-python3&#34;]" target="allowedTools" />
+          <zeebe:input source="=[selectedTool]" target="allowedTools" />
+          <zeebe:input source="NONE" target="networkAccess" />
           <zeebe:input source="30" target="timeoutSeconds" />
           <zeebe:input source="256" target="memoryLimitMb" />
-          <zeebe:input source="NONE" target="networkAccess" />
-          <zeebe:input source="development" target="tenantId" />
         </zeebe:ioMapping>
         <zeebe:taskHeaders>
           <zeebe:header key="resultVariable" value="pythonResult" />
