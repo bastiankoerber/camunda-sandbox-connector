@@ -1,0 +1,272 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "read",
+        "write",
+        "close",
+        "stat",
+        "fstat",
+        "lstat",
+        "lseek",
+        "mmap",
+        "mprotect",
+        "munmap",
+        "brk",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "pread64",
+        "pwrite64",
+        "readv",
+        "writev",
+        "access",
+        "pipe",
+        "select",
+        "sched_yield",
+        "mremap",
+        "msync",
+        "mincore",
+        "madvise",
+        "dup",
+        "dup2",
+        "nanosleep",
+        "getpid",
+        "exit",
+        "wait4",
+        "uname",
+        "fcntl",
+        "flock",
+        "fsync",
+        "fdatasync",
+        "getdents",
+        "getcwd",
+        "chdir",
+        "fchdir",
+        "umask",
+        "gettimeofday",
+        "getrlimit",
+        "getrusage",
+        "sysinfo",
+        "times",
+        "getuid",
+        "getgid",
+        "geteuid",
+        "getegid",
+        "getppid",
+        "getpgrp",
+        "getgroups",
+        "getresuid",
+        "getresgid",
+        "getpgid",
+        "getsid",
+        "capget",
+        "rt_sigpending",
+        "rt_sigtimedwait",
+        "sigaltstack",
+        "statfs",
+        "fstatfs",
+        "getpriority",
+        "sched_getparam",
+        "sched_getscheduler",
+        "sched_get_priority_max",
+        "sched_get_priority_min",
+        "sched_rr_get_interval",
+        "prctl",
+        "arch_prctl",
+        "set_tid_address",
+        "restart_syscall",
+        "exit_group",
+        "epoll_create",
+        "epoll_ctl",
+        "epoll_wait",
+        "set_robust_list",
+        "get_robust_list",
+        "openat",
+        "newfstatat",
+        "readlinkat",
+        "faccessat",
+        "pselect6",
+        "ppoll",
+        "epoll_pwait",
+        "timerfd_create",
+        "eventfd",
+        "timerfd_settime",
+        "timerfd_gettime",
+        "eventfd2",
+        "epoll_create1",
+        "dup3",
+        "pipe2",
+        "preadv",
+        "pwritev",
+        "prlimit64",
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "getdents64",
+        "futex",
+        "sched_getaffinity",
+        "fadvise64",
+        "getrandom",
+        "statx",
+        "close_range",
+        "openat2",
+        "faccessat2",
+        "rseq"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Minimal set of syscalls for read-only operations"
+    },
+    {
+      "names": [
+        "execve"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Allow execve for running the sandboxed command"
+    },
+    {
+      "names": [
+        "clone",
+        "clone3"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 2114060288,
+          "op": "SCMP_CMP_MASKED_EQ",
+          "valueTwo": 0
+        }
+      ],
+      "comment": "Allow clone only for threads, not new namespaces"
+    },
+    {
+      "names": [
+        "open"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "value": 64,
+          "op": "SCMP_CMP_MASKED_EQ",
+          "valueTwo": 0
+        }
+      ],
+      "comment": "Allow open without O_CREAT flag (read-only)"
+    },
+    {
+      "names": [
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "value": 21523,
+          "op": "SCMP_CMP_EQ"
+        }
+      ],
+      "comment": "Allow TIOCGWINSZ (get window size)"
+    },
+    {
+      "names": [
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "value": 21505,
+          "op": "SCMP_CMP_EQ"
+        }
+      ],
+      "comment": "Allow TCGETS (get terminal attributes)"
+    },
+    {
+      "names": [
+        "ptrace",
+        "mount",
+        "umount2",
+        "pivot_root",
+        "chroot",
+        "setns",
+        "unshare",
+        "reboot",
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "kexec_load",
+        "kexec_file_load",
+        "acct",
+        "swapon",
+        "swapoff",
+        "quotactl",
+        "nfsservctl",
+        "add_key",
+        "request_key",
+        "keyctl",
+        "bpf",
+        "userfaultfd",
+        "perf_event_open",
+        "lookup_dcookie",
+        "create_module",
+        "get_kernel_syms",
+        "query_module",
+        "sysfs",
+        "_sysctl",
+        "afs_syscall",
+        "tuxcall",
+        "security",
+        "vserver",
+        "mbind",
+        "set_mempolicy",
+        "get_mempolicy",
+        "migrate_pages",
+        "move_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Explicitly block dangerous syscalls"
+    },
+    {
+      "names": [
+        "personality"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ],
+      "comment": "Only allow reading personality"
+    },
+    {
+      "names": [
+        "personality"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 4294967295,
+          "op": "SCMP_CMP_EQ"
+        }
+      ],
+      "comment": "Allow personality with 0xffffffff (query)"
+    }
+  ]
+}

@@ -1,0 +1,660 @@
+{
+  "$schema": "https://unpkg.com/@camunda/zeebe-element-templates-json-schema/resources/schema.json",
+  "name": "Sandbox CLI Connector",
+  "id": "io.camunda.connectors.SandboxCLI.v1",
+  "version": 6,
+  "appliesTo": ["bpmn:Task"],
+  "elementType": {
+    "value": "bpmn:ServiceTask"
+  },
+  "icon": {
+    "contents": "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%23333' d='M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zm-2-1h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z'/%3E%3C/svg%3E"
+  },
+  "description": "Execute CLI commands securely in a sandboxed environment with nsjail isolation",
+  "documentationRef": "https://github.com/camunda/sandbox-connector#readme",
+  "category": {
+    "id": "connectors",
+    "name": "Connectors"
+  },
+  "groups": [
+    {
+      "id": "tool",
+      "label": "Tool Selection"
+    },
+    {
+      "id": "executionMode",
+      "label": "Execution Mode"
+    },
+    {
+      "id": "command",
+      "label": "Command & Input"
+    },
+    {
+      "id": "script",
+      "label": "Script Content"
+    },
+    {
+      "id": "security",
+      "label": "Security & Resource Limits"
+    },
+    {
+      "id": "output",
+      "label": "Output Mapping"
+    },
+    {
+      "id": "errors",
+      "label": "Error Handling"
+    }
+  ],
+  "properties": [
+    {
+      "type": "Hidden",
+      "value": "io.camunda:sandbox-cli:1",
+      "binding": {
+        "type": "zeebe:taskDefinition",
+        "property": "type"
+      }
+    },
+    {
+      "id": "action",
+      "type": "Hidden",
+      "value": "execute",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "action"
+      }
+    },
+    {
+      "id": "tenantId",
+      "label": "Security Profile",
+      "description": "Security profile that defines available tools and permissions",
+      "tooltip": "Each profile is a pre-configured security policy:\n\n- DEFAULT: Data processing only (jq, yq, grep, sed, awk). No network access. Safest option.\n- DEVELOPMENT: Adds curl, git, kubectl, helm with read-only restrictions. Network enabled.\n- CLOUD-OPS: Full cloud CLI access (AWS, GCP, Azure). Requires credentials. Use with caution.\n- INFRA-AUTOMATION: Terraform for IaC. Plan/validate only by default.\n- MONITORING: Read-only kubectl and curl for observability.",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "tenantId"
+      },
+      "value": "default",
+      "choices": [
+        {
+          "name": "Default - Data Processing (jq, yq, grep, sed, awk)",
+          "value": "default"
+        },
+        {
+          "name": "Development - API & Kubernetes (curl, git, kubectl, helm)",
+          "value": "development"
+        },
+        {
+          "name": "Cloud Operations - Cloud CLIs (aws, gcloud, az)",
+          "value": "cloud-ops"
+        },
+        {
+          "name": "Infrastructure - IaC (terraform)",
+          "value": "infra-automation"
+        },
+        {
+          "name": "Monitoring - Read-only Observability",
+          "value": "monitoring"
+        }
+      ]
+    },
+    {
+      "id": "executionMode",
+      "label": "Execution Mode",
+      "description": "How do you want to execute code?",
+      "tooltip": "Choose how to provide the code to execute:\n\n- COMMAND: Provide CLI arguments (e.g., jq '.key'). Best for simple one-liners and CLI tools.\n- SCRIPT: Provide multi-line Python script content. Best for complex logic with multiple statements, loops, functions, etc.",
+      "type": "Dropdown",
+      "group": "executionMode",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "executionMode"
+      },
+      "value": "command",
+      "choices": [
+        {
+          "name": "Command - CLI arguments (default)",
+          "value": "command"
+        },
+        {
+          "name": "Script - Multi-line Python script",
+          "value": "script"
+        }
+      ]
+    },
+    {
+      "id": "selectedToolDefault",
+      "label": "Tool",
+      "description": "CLI tool to execute",
+      "tooltip": "Data processing tools (no network access):\n\n- jq: JSON processor. Query/transform JSON data.\n- yq: YAML processor. Same syntax as jq for YAML.\n- grep: Pattern matching in text.\n- sed: Stream editor for text transformations.\n- awk: Text processing.\n- safe-python3: Secured Python interpreter (blocked: os, subprocess, socket, etc.)",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "selectedTool"
+      },
+      "value": "jq",
+      "choices": [
+        {
+          "name": "jq - JSON processor",
+          "value": "jq"
+        },
+        {
+          "name": "yq - YAML processor",
+          "value": "yq"
+        },
+        {
+          "name": "grep - Pattern matching",
+          "value": "grep"
+        },
+        {
+          "name": "sed - Stream editor",
+          "value": "sed"
+        },
+        {
+          "name": "awk - Text processing",
+          "value": "awk"
+        },
+        {
+          "name": "safe-python3 - Secured Python interpreter",
+          "value": "safe-python3"
+        }
+      ],
+      "condition": {
+        "allMatch": [
+          { "property": "tenantId", "equals": "default" },
+          { "property": "executionMode", "equals": "command" }
+        ]
+      }
+    },
+    {
+      "id": "selectedToolDevelopment",
+      "label": "Tool",
+      "description": "CLI tool to execute",
+      "tooltip": "Development tools (network enabled, some restrictions):\n\n- curl: HTTP client. Full HTTP methods.\n- http: HTTPie - user-friendly HTTP client.\n- jq/yq: JSON/YAML processing.\n- git: Read-only operations (status, log, diff, show, branch).\n- kubectl: Read-only K8s (get, describe, logs). No apply/delete.\n- helm: Read-only Helm (list, status, show). No install/upgrade.\n- gh: GitHub CLI for issues, PRs, repos.\n- safe-python3: Secured Python interpreter.",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "selectedTool"
+      },
+      "value": "curl",
+      "choices": [
+        {
+          "name": "curl - HTTP client",
+          "value": "curl"
+        },
+        {
+          "name": "http - HTTPie (user-friendly HTTP)",
+          "value": "http"
+        },
+        {
+          "name": "jq - JSON processor",
+          "value": "jq"
+        },
+        {
+          "name": "yq - YAML processor",
+          "value": "yq"
+        },
+        {
+          "name": "git - Version control (read-only)",
+          "value": "git"
+        },
+        {
+          "name": "kubectl - Kubernetes CLI (read-only)",
+          "value": "kubectl"
+        },
+        {
+          "name": "helm - Kubernetes package manager (read-only)",
+          "value": "helm"
+        },
+        {
+          "name": "gh - GitHub CLI",
+          "value": "gh"
+        },
+        {
+          "name": "safe-python3 - Secured Python interpreter",
+          "value": "safe-python3"
+        }
+      ],
+      "condition": {
+        "allMatch": [
+          { "property": "tenantId", "equals": "development" },
+          { "property": "executionMode", "equals": "command" }
+        ]
+      }
+    },
+    {
+      "id": "selectedToolCloudOps",
+      "label": "Tool",
+      "description": "CLI tool to execute",
+      "tooltip": "Cloud provider CLIs (REQUIRES credentials in environment):\n\n- aws: AWS CLI. Needs AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.\n- gcloud: GCP CLI. Needs GOOGLE_APPLICATION_CREDENTIALS.\n- az: Azure CLI. Needs AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID.\n- kubectl: Kubernetes. Needs KUBECONFIG.\n- curl/jq: For API calls and JSON processing.\n\nWARNING: These tools can modify cloud resources. Use with caution.",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "selectedTool"
+      },
+      "value": "aws",
+      "choices": [
+        {
+          "name": "aws - Amazon Web Services CLI",
+          "value": "aws"
+        },
+        {
+          "name": "gcloud - Google Cloud CLI",
+          "value": "gcloud"
+        },
+        {
+          "name": "az - Azure CLI",
+          "value": "az"
+        },
+        {
+          "name": "kubectl - Kubernetes CLI",
+          "value": "kubectl"
+        },
+        {
+          "name": "curl - HTTP client",
+          "value": "curl"
+        },
+        {
+          "name": "jq - JSON processor",
+          "value": "jq"
+        }
+      ],
+      "condition": {
+        "allMatch": [
+          { "property": "tenantId", "equals": "cloud-ops" },
+          { "property": "executionMode", "equals": "command" }
+        ]
+      }
+    },
+    {
+      "id": "selectedToolInfra",
+      "label": "Tool",
+      "description": "CLI tool to execute",
+      "tooltip": "Infrastructure as Code tools:\n\n- terraform: IaC tool. Allowed: version, validate, fmt, plan, show, state list/show, output. BLOCKED: apply, destroy, import, taint.\n- jq/yq: For processing Terraform output and state files.\n\nNOTE: Terraform plan is allowed but apply is blocked for safety.",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "selectedTool"
+      },
+      "value": "terraform",
+      "choices": [
+        {
+          "name": "terraform - Infrastructure as Code",
+          "value": "terraform"
+        },
+        {
+          "name": "jq - JSON processor",
+          "value": "jq"
+        },
+        {
+          "name": "yq - YAML processor",
+          "value": "yq"
+        }
+      ],
+      "condition": {
+        "allMatch": [
+          { "property": "tenantId", "equals": "infra-automation" },
+          { "property": "executionMode", "equals": "command" }
+        ]
+      }
+    },
+    {
+      "id": "selectedToolMonitoring",
+      "label": "Tool",
+      "description": "CLI tool to execute",
+      "tooltip": "Monitoring and observability tools (read-only):\n\n- kubectl: K8s monitoring (get, describe, logs, top). No mutations.\n- curl: HTTP client for health checks and API queries.\n- jq: JSON processing for parsing responses.\n\nThese tools are restricted to read-only operations for safe monitoring.",
+      "type": "Dropdown",
+      "group": "tool",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "selectedTool"
+      },
+      "value": "kubectl",
+      "choices": [
+        {
+          "name": "kubectl - Kubernetes CLI (read-only)",
+          "value": "kubectl"
+        },
+        {
+          "name": "curl - HTTP client (health checks)",
+          "value": "curl"
+        },
+        {
+          "name": "jq - JSON processor",
+          "value": "jq"
+        }
+      ],
+      "condition": {
+        "allMatch": [
+          { "property": "tenantId", "equals": "monitoring" },
+          { "property": "executionMode", "equals": "command" }
+        ]
+      }
+    },
+    {
+      "id": "scriptLanguage",
+      "label": "Script Language",
+      "description": "Programming language for the script",
+      "tooltip": "Select the programming language of your script content.\n\nCurrently supported:\n- Python: Multi-statement Python scripts with access to safe modules (json, math, datetime, etc.)\n\nMore languages coming soon.",
+      "type": "Dropdown",
+      "group": "script",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "scriptLanguage"
+      },
+      "value": "python",
+      "choices": [
+        {
+          "name": "Python",
+          "value": "python"
+        }
+      ],
+      "condition": {
+        "property": "executionMode",
+        "equals": "script"
+      }
+    },
+    {
+      "id": "scriptContent",
+      "label": "Script Content",
+      "description": "Multi-line Python script code to execute",
+      "tooltip": "Enter your Python code here. The code will be written to a file and executed safely in the sandbox.\n\nExample:\nimport json\nimport math\n\ndata = {\"result\": math.sqrt(2)}\nprint(json.dumps(data))\n\nSECURITY: Dangerous modules (os, subprocess, socket, etc.) are blocked.\nUse FEEL expressions (=prefix) to include process variables.\n\nOutput: Print JSON to stdout - it will be captured in sandboxResult.stdout",
+      "type": "Text",
+      "group": "script",
+      "feel": "optional",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "scriptContent"
+      },
+      "constraints": {
+        "notEmpty": true
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "script"
+      }
+    },
+    {
+      "id": "allowedToolsForScript",
+      "type": "Hidden",
+      "value": "=[\"safe-python3\"]",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "allowedTools"
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "script"
+      }
+    },
+    {
+      "id": "allowedTools",
+      "type": "Hidden",
+      "value": "=[selectedTool]",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "allowedTools"
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "command"
+      }
+    },
+    {
+      "id": "commandArguments",
+      "label": "Arguments",
+      "description": "Command arguments (tool name is added automatically)",
+      "tooltip": "Enter ONLY the arguments, NOT the tool name.\n\nExamples:\n- jq: '.items[].name' or '-r .status'\n- curl: '-s https://api.example.com/health'\n- kubectl: 'get pods -n default -o json'\n- safe-python3: '-c \"print(1+1)\"' (for simple one-liners)\n\nSECURITY: Shell operators (|, &, ;, >, <) are blocked.\nUse FEEL expressions (=prefix) for dynamic values from process variables.\n\nFor multi-statement Python code, use Script mode instead!",
+      "type": "Text",
+      "group": "command",
+      "feel": "optional",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "commandArguments"
+      },
+      "constraints": {
+        "notEmpty": true
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "command"
+      }
+    },
+    {
+      "id": "command",
+      "type": "Hidden",
+      "value": "=selectedTool + \" \" + commandArguments",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "command"
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "command"
+      }
+    },
+    {
+      "id": "inputData",
+      "label": "Input Data (stdin)",
+      "description": "Data to pass to the command via stdin",
+      "tooltip": "Data piped to the command's standard input. Ideal for:\n\n- jq/yq: JSON/YAML to process (e.g., =myProcessVariable)\n- grep/sed/awk: Text to search/transform\n\nUse a FEEL expression (=variableName) to pass process variables, or enter literal JSON/text directly.\n\nLeave empty if the command fetches its own data (e.g., curl, kubectl).",
+      "type": "Text",
+      "group": "command",
+      "feel": "optional",
+      "optional": true,
+      "binding": {
+        "type": "zeebe:input",
+        "name": "inputData"
+      },
+      "condition": {
+        "property": "executionMode",
+        "equals": "command"
+      }
+    },
+    {
+      "id": "environment",
+      "label": "Environment Variables",
+      "description": "Additional environment variables as JSON object",
+      "tooltip": "Environment variables injected into the sandbox. Format: JSON object.\n\nExamples:\n{\"API_KEY\": \"my-key\", \"DEBUG\": \"true\"}\n\nFor secrets, use Camunda secrets syntax:\n{\"API_KEY\": \"{{secrets.MY_API_KEY}}\"}\n\nCloud CLI credentials (if not pre-configured):\n{\"AWS_ACCESS_KEY_ID\": \"{{secrets.AWS_KEY}}\", \"AWS_SECRET_ACCESS_KEY\": \"{{secrets.AWS_SECRET}}\"}\n\nVariables are isolated to this execution only.",
+      "type": "Text",
+      "group": "command",
+      "feel": "optional",
+      "optional": true,
+      "binding": {
+        "type": "zeebe:input",
+        "name": "environment"
+      }
+    },
+    {
+      "id": "networkAccess",
+      "label": "Network Access",
+      "description": "Network isolation level",
+      "tooltip": "Controls what network destinations the command can reach:\n\n- NONE: No network (default, most secure). For local data processing.\n- INTERNAL: Cluster-internal only. For internal service calls.\n- RESTRICTED: Only pre-approved hosts (defined in tenant policy).\n- FULL: Any destination. Use only when necessary.\n\nTools like curl, cloud CLIs require at least RESTRICTED or FULL access.",
+      "type": "Dropdown",
+      "group": "security",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "networkAccess"
+      },
+      "value": "NONE",
+      "choices": [
+        {
+          "name": "None - No network access (most secure)",
+          "value": "NONE"
+        },
+        {
+          "name": "Internal - Cluster-internal only",
+          "value": "INTERNAL"
+        },
+        {
+          "name": "Restricted - Allowlisted hosts only",
+          "value": "RESTRICTED"
+        },
+        {
+          "name": "Full - Any destination (use with caution)",
+          "value": "FULL"
+        }
+      ]
+    },
+    {
+      "id": "timeoutSeconds",
+      "label": "Timeout",
+      "description": "Maximum execution time before termination",
+      "tooltip": "How long the command can run before being killed:\n\n- 10s: Quick operations (jq, simple curl)\n- 30s: Standard API calls (default)\n- 60s: Slower operations (git, kubectl)\n- 120s: Cloud CLI operations\n- 300s: Long-running tasks (terraform plan)\n\nExceeding timeout results in an error with code TIMEOUT.",
+      "type": "Dropdown",
+      "group": "security",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "timeoutSeconds"
+      },
+      "value": "30",
+      "choices": [
+        { "name": "10 seconds - Quick operations", "value": "10" },
+        { "name": "30 seconds - Standard (default)", "value": "30" },
+        { "name": "60 seconds - Medium operations", "value": "60" },
+        { "name": "120 seconds - Slow operations", "value": "120" },
+        { "name": "300 seconds - Long-running (5 min)", "value": "300" }
+      ]
+    },
+    {
+      "id": "memoryLimitMb",
+      "label": "Memory Limit",
+      "description": "Maximum RAM the command can use",
+      "tooltip": "Memory cap for the sandboxed process. Exceeding causes OOM kill.\n\n- 128 MB: Text tools (grep, sed, awk)\n- 256 MB: JSON/YAML processing (jq, yq)\n- 512 MB: Cloud CLIs (aws, gcloud, az)\n- 1024 MB: Heavy processing (terraform, large datasets)\n\nIf you see OOM errors, increase this limit.",
+      "type": "Dropdown",
+      "group": "security",
+      "binding": {
+        "type": "zeebe:input",
+        "name": "memoryLimitMb"
+      },
+      "value": "256",
+      "choices": [
+        { "name": "128 MB - Light (text processing)", "value": "128" },
+        { "name": "256 MB - Standard (JSON/YAML)", "value": "256" },
+        { "name": "512 MB - Medium (cloud CLIs)", "value": "512" },
+        { "name": "1024 MB - Heavy (terraform, big data)", "value": "1024" }
+      ]
+    },
+    {
+      "id": "resultVariable",
+      "label": "Result Variable",
+      "description": "Process variable to store the full result object",
+      "tooltip": "The complete execution result is stored here as an object with these fields:\n\n- stdout: Command output (string)\n- stderr: Error output (string)\n- exitCode: Exit code (0 = success)\n- success: Boolean (true if exitCode is 0)\n- executionTimeMs: Duration in milliseconds\n- resourceUsage: Memory and CPU used\n\nAccess fields like: =sandboxResult.stdout",
+      "type": "String",
+      "group": "output",
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "resultVariable"
+      },
+      "value": "sandboxResult"
+    },
+    {
+      "id": "resultExpression",
+      "label": "Result Expression",
+      "description": "FEEL expression to transform the result",
+      "tooltip": "Optional FEEL expression to extract/transform data from the result before storing.\n\nExamples:\n- Just output: =response.stdout\n- Parse JSON output: =response.stdout.jsonParse()\n- Custom object: ={data: response.stdout, ok: response.exitCode = 0}\n- Handle errors: =if response.success then response.stdout else response.stderr\n\nThe full response object is available as 'response'.",
+      "type": "Text",
+      "group": "output",
+      "feel": "required",
+      "optional": true,
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "resultExpression"
+      }
+    },
+    {
+      "id": "errorHandling",
+      "label": "Error Handling Mode",
+      "description": "How should CLI execution failures be handled?",
+      "tooltip": "Choose how to handle non-zero exit codes from CLI commands:\n\n- IGNORE: Non-zero exit codes don't throw errors (check sandboxResult.success yourself)\n- THROW BPMN ERROR: Automatically throw a BPMN error that can be caught by a boundary error event\n- CUSTOM: Write your own FEEL expression",
+      "type": "Dropdown",
+      "group": "errors",
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "errorHandlingMode"
+      },
+      "value": "ignore",
+      "choices": [
+        {
+          "name": "Ignore - Handle manually in process",
+          "value": "ignore"
+        },
+        {
+          "name": "Throw BPMN Error on failure",
+          "value": "throwError"
+        },
+        {
+          "name": "Custom expression",
+          "value": "custom"
+        }
+      ]
+    },
+    {
+      "id": "errorExpressionAuto",
+      "type": "Hidden",
+      "value": "=if response.exitCode != 0 then bpmnError(\"CLI_EXECUTION_ERROR\", \"Exit code \" + string(response.exitCode) + \": \" + (if response.stderr != null and response.stderr != \"\" then response.stderr else \"Command failed\")) else null",
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "errorExpression"
+      },
+      "condition": {
+        "property": "errorHandling",
+        "equals": "throwError"
+      }
+    },
+    {
+      "id": "errorExpressionCustom",
+      "label": "Error Expression",
+      "description": "Custom FEEL expression for error handling",
+      "tooltip": "Write a FEEL expression to handle errors. The 'response' object contains:\n- response.exitCode: Exit code (0 = success)\n- response.success: Boolean\n- response.stdout: Command output (never null, may be empty)\n- response.stderr: Error output (never null, may be empty)\n\nExample to throw BPMN error:\n=if response.exitCode != 0 then bpmnError(\"MY_ERROR\", \"Failed: \" + response.stderr) else null\n\nIMPORTANT: Always handle null - use (response.stderr != null then response.stderr else \"\")",
+      "type": "Text",
+      "group": "errors",
+      "feel": "required",
+      "optional": true,
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "errorExpression"
+      },
+      "condition": {
+        "property": "errorHandling",
+        "equals": "custom"
+      }
+    },
+    {
+      "id": "errorExpressionIgnore",
+      "type": "Hidden",
+      "value": "",
+      "binding": {
+        "type": "zeebe:taskHeader",
+        "key": "errorExpression"
+      },
+      "condition": {
+        "property": "errorHandling",
+        "equals": "ignore"
+      }
+    },
+    {
+      "id": "retries",
+      "label": "Retries",
+      "description": "Number of automatic retries on failure",
+      "tooltip": "How many times Zeebe should retry this task on failure:\n\n- 0: No retries (fail immediately)\n- 1-3: For transient errors (network issues)\n- 5: For unreliable external services\n\nRetries use exponential backoff. Non-retryable errors (validation, security) fail immediately regardless of this setting.",
+      "type": "Dropdown",
+      "group": "errors",
+      "binding": {
+        "type": "zeebe:taskDefinition",
+        "property": "retries"
+      },
+      "value": "3",
+      "choices": [
+        { "name": "0 - No retries", "value": "0" },
+        { "name": "1 - Single retry", "value": "1" },
+        { "name": "3 - Standard (default)", "value": "3" },
+        { "name": "5 - Extra resilience", "value": "5" }
+      ]
+    }
+  ]
+}

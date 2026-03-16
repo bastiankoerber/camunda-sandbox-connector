@@ -1,0 +1,43 @@
+# Test configuration for sandbox connector
+# This file is used by Spring Boot tests with @ActiveProfiles("test")
+
+spring:
+  application:
+    name: sandbox-connector-test
+  main:
+    allow-bean-definition-overriding: true
+
+# Sandbox configuration for testing
+sandbox:
+  # Use temp directory for workspace during tests
+  workspace-base: ${java.io.tmpdir}/sandbox-test
+  
+  # nsjail configuration
+  nsjail-path: /usr/bin/nsjail
+  sandbox-rootfs: /sandbox/rootfs
+  tools-directory: ${java.io.tmpdir}/sandbox-test/tools
+  
+  # Security settings - more permissive for tests
+  security:
+    use-user-namespace: true
+    use-pid-namespace: true
+    use-mount-namespace: true
+    sandbox-uid: 65534
+    sandbox-gid: 65534
+    default-seccomp-profile: none  # Disable seccomp in tests
+  
+  # Execution settings
+  execution:
+    thread-pool-size: 2
+    queue-size: 10
+    grace-period-seconds: 2
+    max-output-bytes: 1048576
+    default-timeout-seconds: 30
+    max-timeout-seconds: 60
+
+# Logging configuration for tests
+logging:
+  level:
+    io.camunda.connector.sandbox: DEBUG
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN

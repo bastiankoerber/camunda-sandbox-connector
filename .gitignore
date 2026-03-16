@@ -1,0 +1,74 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+*.war
+*.ear
+*.class
+
+# Test output
+test-output/
+surefire-reports/
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock
+
+# Docker
+.docker/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.env
+
+# Secrets (never commit these!)
+credentials.json
+secrets.yaml
+*.pem
+*.key
+*.p12
+*.jks
+
+# Sandbox workspaces (runtime generated)
+/sandbox/workspaces/
+
+# Local development overrides
+docker-compose.override.yaml
+docker-compose.override.yml
+application-local.yaml
+application-local.yml

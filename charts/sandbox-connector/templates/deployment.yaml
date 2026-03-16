@@ -1,0 +1,231 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sandbox-connector.fullname" . }}
+  labels:
+    {{- include "sandbox-connector.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "sandbox-connector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "sandbox-connector.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "sandbox-connector.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "sandbox-connector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.initContainers }}
+      initContainers:
+        {{- toYaml .Values.initContainers | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "sandbox-connector.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS
+              value: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom"
+            # Sandbox configuration
+            - name: SANDBOX_ENABLED
+              value: {{ .Values.config.sandbox.enabled | quote }}
+            - name: SANDBOX_NSJAIL_PATH
+              value: {{ .Values.config.sandbox.nsjailPath | quote }}
+            - name: SANDBOX_WORKSPACE_BASE
+              value: {{ .Values.config.sandbox.workspaceBase | quote }}
+            - name: SANDBOX_TOOLS_DIRECTORY
+              value: {{ .Values.config.sandbox.toolsDirectory | quote }}
+            - name: SANDBOX_SECCOMP_PROFILES_DIRECTORY
+              value: {{ .Values.config.sandbox.seccompProfilesDirectory | quote }}
+            - name: SANDBOX_ROOTFS
+              value: {{ .Values.config.sandbox.sandboxRootfs | quote }}
+            - name: SANDBOX_DEFAULT_TENANT_ID
+              value: {{ .Values.config.sandbox.defaultTenantId | quote }}
+            # Execution configuration
+            - name: SANDBOX_EXECUTION_THREAD_POOL_SIZE
+              value: {{ .Values.config.execution.threadPoolSize | quote }}
+            - name: SANDBOX_EXECUTION_QUEUE_SIZE
+              value: {{ .Values.config.execution.queueSize | quote }}
+            - name: SANDBOX_EXECUTION_DEFAULT_TIMEOUT_SECONDS
+              value: {{ .Values.config.execution.defaultTimeoutSeconds | quote }}
+            - name: SANDBOX_EXECUTION_MAX_TIMEOUT_SECONDS
+              value: {{ .Values.config.execution.maxTimeoutSeconds | quote }}
+            - name: SANDBOX_EXECUTION_MAX_MEMORY_MB
+              value: {{ .Values.config.execution.maxMemoryMb | quote }}
+            # Security configuration
+            - name: SANDBOX_SECURITY_STRICT_MODE
+              value: {{ .Values.config.security.strictMode | quote }}
+            - name: SANDBOX_SECURITY_ALLOW_SHELL_FEATURES
+              value: {{ .Values.config.security.allowShellFeatures | quote }}
+            # Metrics configuration
+            - name: SANDBOX_METRICS_ENABLED
+              value: {{ .Values.config.metrics.enabled | quote }}
+            - name: SANDBOX_METRICS_PREFIX
+              value: {{ .Values.config.metrics.prefix | quote }}
+            {{- if .Values.externalConfig.toolRegistry.enabled }}
+            - name: SANDBOX_TOOL_REGISTRY_PATH
+              value: {{ .Values.externalConfig.toolRegistry.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.externalConfig.tenantPolicies.enabled }}
+            - name: SANDBOX_TENANT_POLICIES_PATH
+              value: {{ .Values.externalConfig.tenantPolicies.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.secrets.aws.enabled }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-aws
+                  key: accessKeyId
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-aws
+                  key: secretAccessKey
+            {{- if .Values.secrets.aws.sessionToken }}
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-aws
+                  key: sessionToken
+            {{- end }}
+            {{- end }}
+            {{- if .Values.secrets.azure.enabled }}
+            - name: AZURE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-azure
+                  key: clientId
+            - name: AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-azure
+                  key: clientSecret
+            - name: AZURE_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sandbox-connector.fullname" . }}-azure
+                  key: tenantId
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: workspace
+              mountPath: /sandbox/workspaces
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.externalConfig.toolRegistry.enabled }}
+            - name: tool-registry
+              mountPath: {{ .Values.externalConfig.toolRegistry.mountPath }}
+              subPath: {{ .Values.externalConfig.toolRegistry.subPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.externalConfig.tenantPolicies.enabled }}
+            - name: tenant-policies
+              mountPath: {{ .Values.externalConfig.tenantPolicies.mountPath }}
+              subPath: {{ .Values.externalConfig.tenantPolicies.subPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.secrets.kubeconfig.enabled }}
+            - name: kubeconfig
+              mountPath: /home/sandbox/.kube
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: tools-cache
+              mountPath: /sandbox/tools
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "sandbox-connector.fullname" . }}
+        - name: workspace
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+        {{- if .Values.externalConfig.toolRegistry.enabled }}
+        - name: tool-registry
+          configMap:
+            name: {{ .Values.externalConfig.toolRegistry.configMapName }}
+        {{- end }}
+        {{- if .Values.externalConfig.tenantPolicies.enabled }}
+        - name: tenant-policies
+          configMap:
+            name: {{ .Values.externalConfig.tenantPolicies.configMapName }}
+        {{- end }}
+        {{- if .Values.secrets.kubeconfig.enabled }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ include "sandbox-connector.fullname" . }}-kubeconfig
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
+        - name: tools-cache
+          persistentVolumeClaim:
+            claimName: {{ include "sandbox-connector.fullname" . }}-tools
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}

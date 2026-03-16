@@ -1,0 +1,564 @@
+#!/bin/bash
+# safe-python3 - A security wrapper for Python 3 in sandboxed environments
+# This script blocks dangerous module imports before executing Python code
+#
+# Usage: safe-python3 -c 'your_code_here'
+#        safe-python3 --help
+#        safe-python3 --capabilities (JSON output for API integration)
+
+set -e
+
+VERSION="1.0.0"
+
+# =============================================================================
+# ALLOWED MODULES - Safe for sandbox execution
+# =============================================================================
+ALLOWED_MODULES=(
+    # Data formats
+    "json"          # JSON encoding/decoding
+    "csv"           # CSV file reading/writing
+    "html"          # HTML escaping
+    "xml.etree.ElementTree"  # XML parsing
+    
+    # Math & numbers
+    "math"          # Mathematical functions
+    "decimal"       # Decimal fixed-point arithmetic
+    "fractions"     # Rational numbers
+    "statistics"    # Statistical functions
+    "random"        # Random number generation
+    
+    # Text processing
+    "re"            # Regular expressions
+    "string"        # String constants and utilities
+    "textwrap"      # Text wrapping and filling
+    "difflib"       # Sequence comparison
+    
+    # Data structures
+    "collections"   # Specialized container datatypes
+    "itertools"     # Iterator building blocks
+    "functools"     # Higher-order functions
+    "operator"      # Standard operators as functions
+    "copy"          # Shallow and deep copy
+    
+    # Type system
+    "typing"        # Type hints
+    "enum"          # Enumeration support
+    "dataclasses"   # Data classes
+    
+    # Encoding & hashing
+    "base64"        # Base64 encoding/decoding
+    "hashlib"       # Secure hash algorithms (SHA, MD5)
+    "hmac"          # Keyed-hashing for authentication
+    
+    # Utilities
+    "datetime"      # Date and time handling
+    "uuid"          # UUID generation
+    "pprint"        # Pretty-printing
+    "argparse"      # Command-line argument parsing
+    "configparser"  # Configuration file parsing
+)
+
+# =============================================================================
+# BLOCKED CATEGORIES - Not allowed in sandbox
+# =============================================================================
+declare -A BLOCKED_CATEGORIES=(
+    ["Process Execution"]="os, subprocess, pty, commands, popen2"
+    ["Network Access"]="socket, urllib, requests, http.client, http.server, ssl, ftplib, smtplib, imaplib, poplib, telnetlib, xmlrpc, aiohttp, httpx, asyncio"
+    ["System Access"]="ctypes, multiprocessing, threading, _thread, signal, resource, fcntl, mmap"
+    ["File Operations"]="shutil, tempfile, glob"
+    ["Code Execution"]="exec(), eval(), compile(), __import__(), importlib, builtins, __builtins__"
+    ["Serialization"]="pickle, cPickle, marshal, shelve"
+    ["Code Introspection"]="inspect, dis, code, codeop"
+    ["Dangerous sys"]="sys.exit, sys.modules, sys.path, sys.executable"
+)
+
+# Blocked patterns (regex)
+BLOCKED_PATTERNS=(
+    # Process execution
+    'import\s+os' 'from\s+os\s+import'
+    'import\s+subprocess' 'from\s+subprocess\s+import'
+    'import\s+pty' 'from\s+pty\s+import'
+    'import\s+commands' 'from\s+commands\s+import'
+    'import\s+popen2' 'from\s+popen2\s+import'
+    
+    # Network access
+    'import\s+socket' 'from\s+socket\s+import'
+    'import\s+urllib' 'from\s+urllib\s+import'
+    'import\s+http\.client' 'from\s+http\.client\s+import'
+    'import\s+http\.server' 'from\s+http\.server\s+import'
+    'import\s+ssl' 'from\s+ssl\s+import'
+    'import\s+ftplib' 'from\s+ftplib\s+import'
+    'import\s+smtplib' 'from\s+smtplib\s+import'
+    'import\s+imaplib' 'from\s+imaplib\s+import'
+    'import\s+poplib' 'from\s+poplib\s+import'
+    'import\s+telnetlib' 'from\s+telnetlib\s+import'
+    'import\s+xmlrpc' 'from\s+xmlrpc\s+import'
+    'import\s+requests' 'from\s+requests\s+import'
+    'import\s+aiohttp' 'from\s+aiohttp\s+import'
+    'import\s+httpx' 'from\s+httpx\s+import'
+    'import\s+asyncio' 'from\s+asyncio\s+import'
+    
+    # System/low-level access
+    'import\s+ctypes' 'from\s+ctypes\s+import'
+    'import\s+multiprocessing' 'from\s+multiprocessing\s+import'
+    'import\s+threading' 'from\s+threading\s+import'
+    'import\s+_thread' 'from\s+_thread\s+import'
+    'import\s+signal' 'from\s+signal\s+import'
+    'import\s+resource' 'from\s+resource\s+import'
+    'import\s+fcntl' 'from\s+fcntl\s+import'
+    'import\s+mmap' 'from\s+mmap\s+import'
+    
+    # Dangerous file operations
+    'import\s+shutil' 'from\s+shutil\s+import'
+    'import\s+tempfile' 'from\s+tempfile\s+import'
+    'import\s+glob' 'from\s+glob\s+import'
+    
+    # Code execution/dynamic imports
+    '__import__\s*\(' 'exec\s*\(' 'eval\s*\(' 'compile\s*\('
+    'importlib\.import_module'
+    'import\s+importlib' 'from\s+importlib\s+import'
+    'import\s+builtins' 'from\s+builtins\s+import'
+    '__builtins__'
+    
+    # Serialization (arbitrary code execution)
+    'import\s+pickle' 'from\s+pickle\s+import'
+    'import\s+cPickle' 'from\s+cPickle\s+import'
+    'import\s+marshal' 'from\s+marshal\s+import'
+    'import\s+shelve' 'from\s+shelve\s+import'
+    
+    # Code introspection/manipulation
+    'import\s+inspect' 'from\s+inspect\s+import'
+    'import\s+dis' 'from\s+dis\s+import'
+    'import\s+code' 'from\s+code\s+import'
+    'import\s+codeop' 'from\s+codeop\s+import'
+    
+    # Dangerous sys operations
+    'sys\.exit' 'sys\.modules' 'sys\.path' 'sys\.executable'
+    
+    # Package installation
+    'pip\s+install' 'pip3\s+install' 'easy_install'
+)
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+show_help() {
+    cat << 'EOF'
+SAFE-PYTHON3 - Secure Python 3 Interpreter for Sandbox Execution
+=================================================================
+
+USAGE:
+    safe-python3 -c 'your_python_code'
+    safe-python3 /workspace/script.py
+    safe-python3 --help
+    safe-python3 --capabilities
+
+DESCRIPTION:
+    This is a security wrapper around Python 3 that blocks dangerous operations
+    to ensure safe execution in sandboxed environments. Supports inline code 
+    execution (-c flag) and file execution from the /workspace/ directory.
+
+EXAMPLES:
+    # JSON processing (inline)
+    safe-python3 -c 'import json; print(json.dumps({"key": "value"}))'
+    
+    # Math calculations (inline)
+    safe-python3 -c 'import math; print(math.sqrt(2))'
+    
+    # Execute script from workspace
+    safe-python3 /workspace/script.py
+    
+    # Multi-line data transformation (inline)
+    safe-python3 -c '
+    import json, base64
+    data = {"msg": base64.b64encode(b"hello").decode()}
+    print(json.dumps(data))
+    '
+    
+    # Text processing with regex
+    safe-python3 -c '
+    import re
+    text = "Hello World 123"
+    numbers = re.findall(r"\d+", text)
+    print(numbers)
+    '
+
+ALLOWED MODULES:
+    Data Formats:    json, csv, html, xml.etree.ElementTree
+    Math & Numbers:  math, decimal, fractions, statistics, random
+    Text Processing: re, string, textwrap, difflib
+    Data Structures: collections, itertools, functools, operator, copy
+    Type System:     typing, enum, dataclasses
+    Encoding:        base64, hashlib, hmac
+    Utilities:       datetime, uuid, pprint, argparse, configparser
+
+BLOCKED OPERATIONS (for security):
+    Process Execution:   os, subprocess, pty, commands
+    Network Access:      socket, urllib, requests, http.*, ssl, asyncio
+    System Access:       ctypes, multiprocessing, threading, signal
+    File Operations:     shutil, tempfile, glob
+    Code Execution:      exec(), eval(), compile(), __import__()
+    Serialization:       pickle, marshal, shelve
+    Code Introspection:  inspect, dis, code
+
+RESTRICTIONS:
+    - Inline code (-c 'code') is allowed
+    - File execution only from /workspace/ directory
+    - No interactive mode (-i is blocked)
+    - No package installation (pip is blocked)
+    - Read-only filesystem access (except /workspace)
+
+RESOURCE LIMITS:
+    - Memory: 256 MB
+    - CPU Time: 60 seconds
+    - Output Size: Limited by sandbox
+
+EXIT CODES:
+    0 - Success
+    1 - Security violation or error
+
+OPTIONS:
+    -c CODE              Execute inline Python code
+    /workspace/*.py      Execute a Python script from the workspace
+    -h, --help           Show this help message
+    --capabilities       Output capabilities as JSON (for API integration)
+    --version            Show version information
+
+For network requests, use the 'curl' tool instead.
+For file operations, use allowed sandbox tools.
+EOF
+}
+
+show_capabilities() {
+    # Output JSON for API/programmatic consumption
+    cat << 'EOF'
+{
+  "tool": "safe-python3",
+  "version": "1.0.0",
+  "description": "Secure Python 3 interpreter for sandbox execution",
+  "usage": "safe-python3 -c 'your_code_here' OR safe-python3 /workspace/script.py",
+  "allowedModules": [
+    {"name": "json", "description": "JSON encoding/decoding"},
+    {"name": "csv", "description": "CSV file reading/writing"},
+    {"name": "html", "description": "HTML escaping"},
+    {"name": "xml.etree.ElementTree", "description": "XML parsing"},
+    {"name": "math", "description": "Mathematical functions"},
+    {"name": "decimal", "description": "Decimal fixed-point arithmetic"},
+    {"name": "fractions", "description": "Rational numbers"},
+    {"name": "statistics", "description": "Statistical functions"},
+    {"name": "random", "description": "Random number generation"},
+    {"name": "re", "description": "Regular expressions"},
+    {"name": "string", "description": "String constants and utilities"},
+    {"name": "textwrap", "description": "Text wrapping and filling"},
+    {"name": "difflib", "description": "Sequence comparison"},
+    {"name": "collections", "description": "Specialized container datatypes"},
+    {"name": "itertools", "description": "Iterator building blocks"},
+    {"name": "functools", "description": "Higher-order functions"},
+    {"name": "operator", "description": "Standard operators as functions"},
+    {"name": "copy", "description": "Shallow and deep copy"},
+    {"name": "typing", "description": "Type hints"},
+    {"name": "enum", "description": "Enumeration support"},
+    {"name": "dataclasses", "description": "Data classes"},
+    {"name": "base64", "description": "Base64 encoding/decoding"},
+    {"name": "hashlib", "description": "Secure hash algorithms"},
+    {"name": "hmac", "description": "Keyed-hashing for authentication"},
+    {"name": "datetime", "description": "Date and time handling"},
+    {"name": "uuid", "description": "UUID generation"},
+    {"name": "pprint", "description": "Pretty-printing"},
+    {"name": "argparse", "description": "Command-line argument parsing"},
+    {"name": "configparser", "description": "Configuration file parsing"}
+  ],
+  "blockedCategories": [
+    {"category": "Process Execution", "modules": ["os", "subprocess", "pty", "commands", "popen2"]},
+    {"category": "Network Access", "modules": ["socket", "urllib", "requests", "http.client", "http.server", "ssl", "ftplib", "smtplib", "imaplib", "poplib", "telnetlib", "xmlrpc", "aiohttp", "httpx", "asyncio"]},
+    {"category": "System Access", "modules": ["ctypes", "multiprocessing", "threading", "_thread", "signal", "resource", "fcntl", "mmap"]},
+    {"category": "File Operations", "modules": ["shutil", "tempfile", "glob"]},
+    {"category": "Code Execution", "patterns": ["exec()", "eval()", "compile()", "__import__()", "importlib", "builtins"]},
+    {"category": "Serialization", "modules": ["pickle", "cPickle", "marshal", "shelve"]},
+    {"category": "Code Introspection", "modules": ["inspect", "dis", "code", "codeop"]}
+  ],
+  "restrictions": {
+    "inlineCodeAllowed": true,
+    "fileExecutionAllowed": true,
+    "fileExecutionPath": "/workspace/*.py",
+    "interactiveModeAllowed": false,
+    "packageInstallationAllowed": false,
+    "readOnlyFilesystem": true
+  },
+  "resourceLimits": {
+    "maxMemoryMb": 256,
+    "maxCpuSeconds": 60,
+    "maxOutputBytes": 1048576
+  },
+  "examples": [
+    {
+      "description": "JSON processing",
+      "code": "import json; print(json.dumps({'key': 'value'}))"
+    },
+    {
+      "description": "Math calculations",
+      "code": "import math; print(math.sqrt(2))"
+    },
+    {
+      "description": "Base64 encoding",
+      "code": "import base64; print(base64.b64encode(b'hello').decode())"
+    },
+    {
+      "description": "Date formatting",
+      "code": "from datetime import datetime; print(datetime.now().isoformat())"
+    },
+    {
+      "description": "UUID generation",
+      "code": "import uuid; print(str(uuid.uuid4()))"
+    },
+    {
+      "description": "Regex matching",
+      "code": "import re; print(re.findall(r'\\d+', 'abc123def456'))"
+    },
+    {
+      "description": "Multi-statement script (via file)",
+      "usage": "Write code to /workspace/script.py, then run: safe-python3 /workspace/script.py"
+    }
+  ]
+}
+EOF
+}
+
+show_version() {
+    echo "safe-python3 version $VERSION"
+    echo "Security wrapper for Python 3 in sandboxed environments"
+}
+
+# Find available python3 binary
+find_python() {
+    for p in /bin/python3.10 /bin/python3.11 /bin/python3.12 /bin/python3 \
+             /usr/bin/python3.10 /usr/bin/python3.11 /usr/bin/python3.12 /usr/bin/python3; do
+        if [[ -x "$p" ]]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Get human-readable category for a blocked pattern
+get_blocked_category() {
+    local pattern="$1"
+    
+    case "$pattern" in
+        *os*|*subprocess*|*pty*|*commands*|*popen*)
+            echo "Process Execution" ;;
+        *socket*|*urllib*|*http*|*ssl*|*ftp*|*smtp*|*imap*|*pop*|*telnet*|*xmlrpc*|*requests*|*aiohttp*|*httpx*|*asyncio*)
+            echo "Network Access" ;;
+        *ctypes*|*multiprocessing*|*threading*|*_thread*|*signal*|*resource*|*fcntl*|*mmap*)
+            echo "System Access" ;;
+        *shutil*|*tempfile*|*glob*)
+            echo "File Operations" ;;
+        *__import__*|*exec*|*eval*|*compile*|*importlib*|*builtins*)
+            echo "Code Execution" ;;
+        *pickle*|*cPickle*|*marshal*|*shelve*)
+            echo "Serialization" ;;
+        *inspect*|*dis*|*code*)
+            echo "Code Introspection" ;;
+        *sys\.*)
+            echo "Dangerous sys Operations" ;;
+        *pip*|*easy_install*)
+            echo "Package Installation" ;;
+        *)
+            echo "Security" ;;
+    esac
+}
+
+# Get suggestion for blocked operation
+get_suggestion() {
+    local category="$1"
+    
+    case "$category" in
+        "Process Execution")
+            echo "TIP: Use dedicated CLI tools (curl, jq, etc.) instead of Python subprocess." ;;
+        "Network Access")
+            echo "TIP: Use the 'curl' or 'http' tool for HTTP requests instead of Python networking." ;;
+        "File Operations")
+            echo "TIP: File operations are restricted. Process data in memory using allowed modules." ;;
+        "Code Execution")
+            echo "TIP: Dynamic code execution is blocked. Write your logic directly in the -c argument." ;;
+        "Serialization")
+            echo "TIP: Use 'json' module for serialization instead of pickle/marshal." ;;
+        *)
+            echo "TIP: Run 'safe-python3 --help' to see allowed modules and examples." ;;
+    esac
+}
+
+# Check code for blocked patterns
+check_code() {
+    local code="$1"
+    
+    for pattern in "${BLOCKED_PATTERNS[@]}"; do
+        if echo "$code" | grep -qEi "$pattern"; then
+            local category=$(get_blocked_category "$pattern")
+            local suggestion=$(get_suggestion "$category")
+            
+            echo "" >&2
+            echo "========================================" >&2
+            echo "SECURITY VIOLATION: $category" >&2
+            echo "========================================" >&2
+            echo "" >&2
+            echo "Blocked pattern: $pattern" >&2
+            echo "" >&2
+            echo "$suggestion" >&2
+            echo "" >&2
+            echo "Run 'safe-python3 --help' for allowed modules." >&2
+            echo "Run 'safe-python3 --capabilities' for JSON output." >&2
+            echo "" >&2
+            return 1
+        fi
+    done
+    
+    return 0
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+PYTHON_BIN=$(find_python)
+if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERROR: No Python 3 interpreter found." >&2
+    exit 1
+fi
+
+# Parse arguments
+CODE=""
+MODE=""
+
+# Handle no arguments
+if [[ $# -eq 0 ]]; then
+    echo "ERROR: No arguments provided." >&2
+    echo "" >&2
+    echo "Usage: safe-python3 -c 'your_code_here'" >&2
+    echo "       safe-python3 --help" >&2
+    echo "" >&2
+    echo "Example: safe-python3 -c 'import json; print(json.dumps({\"x\": 1}))'" >&2
+    exit 1
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --capabilities)
+            show_capabilities
+            exit 0
+            ;;
+        --version)
+            show_version
+            exit 0
+            ;;
+        -c)
+            MODE="inline"
+            if [[ -z "$2" ]]; then
+                echo "ERROR: -c requires a code argument." >&2
+                echo "Usage: safe-python3 -c 'your_code_here'" >&2
+                exit 1
+            fi
+            CODE="$2"
+            shift 2
+            ;;
+        -m)
+            # Module mode - only allow safe modules
+            MODULE="$2"
+            ALLOWED_PATTERN="^($(IFS='|'; echo "${ALLOWED_MODULES[*]}"))$"
+            if [[ "$MODULE" =~ $ALLOWED_PATTERN ]]; then
+                exec "$PYTHON_BIN" "$@"
+            else
+                echo "" >&2
+                echo "ERROR: Module '$MODULE' is not in the allowed list." >&2
+                echo "" >&2
+                echo "Allowed modules:" >&2
+                printf '  %s\n' "${ALLOWED_MODULES[@]}" >&2
+                echo "" >&2
+                echo "Run 'safe-python3 --help' for more information." >&2
+                exit 1
+            fi
+            ;;
+        -u|-E|-s|-S)
+            # Safe flags, ignore
+            shift
+            ;;
+        -i|--interactive)
+            echo "" >&2
+            echo "ERROR: Interactive mode is not allowed in sandbox." >&2
+            echo "" >&2
+            echo "Use inline code instead: safe-python3 -c 'your_code_here'" >&2
+            exit 1
+            ;;
+        -*)
+            echo "" >&2
+            echo "ERROR: Unknown or blocked flag: $1" >&2
+            echo "" >&2
+            echo "Allowed flags: -c (inline code)" >&2
+            echo "Run 'safe-python3 --help' for usage information." >&2
+            exit 1
+            ;;
+        *)
+            # Check if this is a file path in the allowed workspace directory
+            if [[ "$1" == /workspace/*.py ]]; then
+                # Allow execution of Python files from the workspace directory
+                SCRIPT_FILE="$1"
+                MODE="file"
+                shift
+            else
+                echo "" >&2
+                echo "ERROR: File execution is only allowed for scripts in /workspace/." >&2
+                echo "" >&2
+                echo "Provided path: $1" >&2
+                echo "" >&2
+                echo "For inline code, use:" >&2
+                echo "  safe-python3 -c 'your_code_here'" >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+# Handle file mode
+if [[ "$MODE" == "file" ]]; then
+    if [[ ! -f "$SCRIPT_FILE" ]]; then
+        echo "" >&2
+        echo "ERROR: Script file not found: $SCRIPT_FILE" >&2
+        exit 1
+    fi
+    
+    # Read and validate the script file content
+    SCRIPT_CONTENT=$(cat "$SCRIPT_FILE")
+    if ! check_code "$SCRIPT_CONTENT"; then
+        exit 1
+    fi
+    
+    # Execute the script file
+    exec "$PYTHON_BIN" -I -u "$SCRIPT_FILE"
+fi
+
+# If no code provided
+if [[ -z "$CODE" && "$MODE" != "module" ]]; then
+    echo "" >&2
+    echo "ERROR: No code provided." >&2
+    echo "" >&2
+    echo "Usage: safe-python3 -c 'your_code_here'" >&2
+    echo "" >&2
+    echo "Example: safe-python3 -c 'print(2 + 2)'" >&2
+    exit 1
+fi
+
+# Check the code for blocked patterns
+if ! check_code "$CODE"; then
+    exit 1
+fi
+
+# Execute the code in a restricted environment
+# - Isolated mode (-I): ignore PYTHON* env vars and user site-packages
+# - Unbuffered output (-u)
+exec "$PYTHON_BIN" -I -u -c "$CODE"

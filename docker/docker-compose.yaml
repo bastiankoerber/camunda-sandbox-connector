@@ -1,0 +1,60 @@
+# Docker Compose for Sandbox CLI Connector with Camunda 8 Run
+#
+# Usage:
+#   1. Start C8 Run first (it provides Zeebe on localhost:26500)
+#   2. Then run: docker-compose up -d
+#
+# Note: The connector requires privileged mode for nsjail sandboxing.
+
+services:
+  sandbox-connector:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: sandbox-connector
+    # Required for nsjail to create Linux namespaces
+    privileged: true
+    # Alternative to privileged (more secure but may not work on all systems):
+    # cap_add:
+    #   - SYS_ADMIN
+    #   - NET_ADMIN
+    #   - SYS_PTRACE
+    #   - SETUID
+    #   - SETGID
+    # security_opt:
+    #   - apparmor:unconfined
+    #   - seccomp:unconfined
+    ports:
+      - "8085:8080"  # Connector REST API (8085 to avoid conflicts with C8 Run)
+    environment:
+      # Connect to C8 Run's Zeebe gateway (host.docker.internal = host machine)
+      - ZEEBE_CLIENT_BROKER_GATEWAYADDRESS=host.docker.internal:26500
+      - ZEEBE_CLIENT_SECURITY_PLAINTEXT=true
+      # Operate configuration (for C8 Run)
+      - CAMUNDA_OPERATE_CLIENT_URL=http://host.docker.internal:8081
+      # Disable inbound connectors (this is an outbound-only connector)
+      - CAMUNDA_CONNECTOR_POLLING_ENABLED=false
+      # Sandbox configuration
+      - SANDBOX_ENABLED=true
+      - SANDBOX_DEFAULT_TIMEOUT_SECONDS=60
+      - SANDBOX_DEFAULT_MEMORY_MB=512
+      # Logging
+      - LOGGING_LEVEL_IO_CAMUNDA_CONNECTOR_SANDBOX=DEBUG
+      # Spring profile
+      - SPRING_PROFILES_ACTIVE=docker
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+        reservations:
+          memory: 512M
+          cpus: '0.5'

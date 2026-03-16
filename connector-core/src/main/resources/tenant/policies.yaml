@@ -1,0 +1,361 @@
+# Tenant Security Policies
+# Defines per-tenant allowlists, resource limits, and network policies
+
+tenants:
+  # Default tenant - restrictive baseline policy
+  - tenantId: default
+    tenantName: Default Tenant
+    enabled: true
+    allowedTools:
+      - name: jq
+        allowedVersions:
+          - "latest"
+          - "1.7.1"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: yq
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: grep
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: sed
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: awk
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: safe-python3
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        seccompProfile: strict
+    resourceLimits:
+      cpuMillis: 1000
+      memoryMb: 512
+      timeoutSeconds: 60
+      maxConcurrent: 5
+      maxOutputBytes: 524288  # 512KB
+      maxFileDescriptors: 32
+      maxProcesses: 5
+    networkPolicy:
+      egressAllowed: false
+      dnsAllowed: false
+
+  # Development tenant - more permissive for testing
+  - tenantId: development
+    tenantName: Development Environment
+    enabled: true
+    allowedTools:
+      - name: curl
+        allowedVersions:
+          - "latest"
+        networkAllowed: true
+        blockedArguments:
+          - "--upload-file"
+          - "-T"
+        seccompProfile: network
+      - name: jq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: yq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: git
+        allowedVersions:
+          - "latest"
+        networkAllowed: false
+        blockedArguments:
+          - "push"
+          - "clone"
+          - "fetch"
+          - "pull"
+        seccompProfile: strict
+      - name: kubectl
+        allowedVersions:
+          - "1.29.0"
+          - "1.28.0"
+        networkAllowed: true
+        blockedArguments:
+          - "exec"
+          - "delete"
+          - "apply"
+          - "create"
+        seccompProfile: strict
+      - name: helm
+        allowedVersions:
+          - "3.14.0"
+        networkAllowed: true
+        blockedArguments:
+          - "install"
+          - "upgrade"
+          - "uninstall"
+        seccompProfile: strict
+    resourceLimits:
+      cpuMillis: 1000
+      memoryMb: 512
+      timeoutSeconds: 120
+      maxConcurrent: 10
+      maxOutputBytes: 1048576  # 1MB
+      maxFileDescriptors: 64
+      maxProcesses: 16
+    networkPolicy:
+      egressAllowed: true
+      allowedHosts:
+        - "*.kubernetes.default.svc"
+        - "kubernetes.default.svc"
+        - "api.github.com"
+        - "registry.npmjs.org"
+      blockedHosts:
+        - "169.254.169.254"  # AWS metadata
+        - "metadata.google.internal"  # GCP metadata
+      allowedPorts:
+        - 443
+        - 6443
+      dnsAllowed: true
+    secrets:
+      - envName: KUBECONFIG
+        source: k8s-secret
+        secretName: dev-kubeconfig
+        secretKey: config
+
+  # Cloud operations tenant - access to cloud CLIs
+  - tenantId: cloud-ops
+    tenantName: Cloud Operations
+    enabled: true
+    allowedTools:
+      - name: aws
+        allowedVersions:
+          - "2.15.0"
+        networkAllowed: true
+        blockedArguments:
+          - "iam delete"
+          - "ec2 terminate"
+          - "s3 rb"
+          - "rds delete"
+        seccompProfile: permissive  # Cloud CLIs need additional syscalls
+      - name: gcloud
+        allowedVersions:
+          - "456.0.0"
+        networkAllowed: true
+        blockedArguments:
+          - "compute instances delete"
+          - "iam service-accounts delete"
+          - "projects delete"
+        seccompProfile: permissive  # Cloud CLIs need additional syscalls
+      - name: az
+        allowedVersions:
+          - "2.55.0"
+        networkAllowed: true
+        blockedArguments:
+          - "vm delete"
+          - "group delete"
+          - "keyvault delete"
+        seccompProfile: permissive  # Cloud CLIs need additional syscalls
+      - name: kubectl
+        allowedVersions:
+          - "1.29.0"
+        networkAllowed: true
+        blockedArguments:
+          - "exec"
+          - "delete"
+          - "apply"
+          - "create"
+        seccompProfile: strict
+      - name: curl
+        allowedVersions:
+          - "latest"
+        networkAllowed: true
+        seccompProfile: network
+      - name: jq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+    resourceLimits:
+      cpuMillis: 2000
+      memoryMb: 1024
+      timeoutSeconds: 300
+      maxConcurrent: 20
+      maxOutputBytes: 2097152  # 2MB
+      maxFileDescriptors: 128
+      maxProcesses: 32
+    networkPolicy:
+      egressAllowed: true
+      allowedHosts:
+        - "*.amazonaws.com"
+        - "*.aws.amazon.com"
+        - "*.googleapis.com"
+        - "*.azure.com"
+        - "*.microsoft.com"
+        - "*.kubernetes.io"
+      blockedHosts:
+        - "169.254.169.254"  # AWS metadata (force use of IAM roles)
+        - "metadata.google.internal"
+      allowedPorts:
+        - 443
+        - 6443
+      dnsAllowed: true
+    secrets:
+      - envName: AWS_ACCESS_KEY_ID
+        source: vault
+        secretName: cloud-credentials
+        secretKey: aws-access-key
+      - envName: AWS_SECRET_ACCESS_KEY
+        source: vault
+        secretName: cloud-credentials
+        secretKey: aws-secret-key
+      - envName: GOOGLE_APPLICATION_CREDENTIALS
+        source: k8s-secret
+        secretName: gcp-service-account
+        secretKey: key.json
+
+  # Infrastructure automation tenant - Terraform access
+  - tenantId: infra-automation
+    tenantName: Infrastructure Automation
+    enabled: true
+    allowedTools:
+      - name: terraform
+        allowedVersions:
+          - "1.7.0"
+          - "1.6.6"
+        networkAllowed: true
+        blockedArguments:
+          - "apply -auto-approve"
+          - "destroy"
+          - "import"
+          - "taint"
+          - "force-unlock"
+        seccompProfile: permissive  # Terraform needs additional syscalls for plugins
+      - name: jq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+      - name: yq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+    resourceLimits:
+      cpuMillis: 4000
+      memoryMb: 2048
+      timeoutSeconds: 600
+      maxConcurrent: 5
+      maxOutputBytes: 4194304  # 4MB
+      maxFileDescriptors: 256
+      maxProcesses: 64
+    networkPolicy:
+      egressAllowed: true
+      allowedHosts:
+        - "registry.terraform.io"
+        - "releases.hashicorp.com"
+        - "*.amazonaws.com"
+        - "*.googleapis.com"
+        - "*.azure.com"
+      blockedHosts:
+        - "169.254.169.254"
+        - "metadata.google.internal"
+      allowedPorts:
+        - 443
+      dnsAllowed: true
+
+  # Read-only monitoring tenant
+  - tenantId: monitoring
+    tenantName: Read-Only Monitoring
+    enabled: true
+    allowedTools:
+      - name: kubectl
+        allowedVersions:
+          - "latest"
+          - "1.29.0"
+        networkAllowed: true
+        # Only allow read-only operations
+        blockedArguments:
+          - "exec"
+          - "delete"
+          - "apply"
+          - "create"
+          - "patch"
+          - "replace"
+          - "edit"
+        seccompProfile: strict
+      - name: curl
+        allowedVersions:
+          - "latest"
+        networkAllowed: true
+        blockedArguments:
+          - "-X POST"
+          - "-X PUT"
+          - "-X DELETE"
+          - "-X PATCH"
+          - "--upload-file"
+          - "-T"
+          - "-d"
+          - "--data"
+        seccompProfile: network
+      - name: jq
+        allowedVersions:
+          - "*"
+        networkAllowed: false
+        seccompProfile: strict
+    resourceLimits:
+      cpuMillis: 500
+      memoryMb: 256
+      timeoutSeconds: 60
+      maxConcurrent: 10
+      maxOutputBytes: 1048576
+      maxFileDescriptors: 64
+      maxProcesses: 16
+    networkPolicy:
+      egressAllowed: true
+      allowedHosts:
+        - "*.kubernetes.default.svc"
+        - "prometheus.*"
+        - "grafana.*"
+      allowedPorts:
+        - 443
+        - 6443
+        - 9090
+        - 3000
+      dnsAllowed: true
+
+# Global settings that apply to all tenants
+globalSettings:
+  # Absolute maximum resource limits (cannot be exceeded by any tenant)
+  absoluteLimits:
+    cpuMillis: 4000
+    memoryMb: 4096
+    timeoutSeconds: 900
+    maxConcurrent: 50
+  
+  # Default values for new tenants
+  defaults:
+    enabled: false  # New tenants are disabled by default
+    resourceLimits:
+      cpuMillis: 500
+      memoryMb: 256
+      timeoutSeconds: 60
+      maxConcurrent: 5
+    networkPolicy:
+      egressAllowed: false
+      dnsAllowed: false
+  
+  # Audit settings
+  audit:
+    logAllCommands: true
+    logCommandArguments: true
+    maskSecrets: true
+    retentionDays: 90

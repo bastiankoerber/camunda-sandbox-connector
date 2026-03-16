@@ -1,0 +1,1086 @@
+# Tool Registry - Defines allowlisted CLI tools and their configurations
+# Each tool must be explicitly defined here to be available for execution
+#
+# IMPORTANT: Checksum Verification for Production Deployment
+# ===========================================================
+# All tool binaries MUST have valid SHA256 checksums to prevent supply chain attacks.
+# The checksums below are placeholders that MUST be replaced with actual values before
+# production deployment.
+#
+# To compute the SHA256 checksum for a binary:
+#
+#   Linux/macOS:
+#     sha256sum /path/to/binary
+#     # or
+#     shasum -a 256 /path/to/binary
+#
+#   Example:
+#     $ sha256sum aws
+#     e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  aws
+#
+# The checksum format in this file should be:
+#   checksum: sha256:<64-character-hex-string>
+#
+# For zip/tar archives, compute the checksum of the archive file BEFORE extraction.
+# The ToolInstaller will verify the checksum after download but before extraction.
+#
+# NOTE: Never deploy to production with "placeholder" checksums - the installer
+# will reject tools with invalid checksums in strict mode.
+
+tools:
+  # AWS CLI - Amazon Web Services command-line interface
+  aws:
+    name: aws
+    displayName: AWS CLI
+    description: Amazon Web Services command-line interface
+    version: "2.15.0"
+    category: cloud
+    installMethod: BINARY
+    installUrl: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+    binaryPath: /opt/tools/aws/aws
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - s3
+      - s3api
+      - ec2
+      - iam
+      - lambda
+      - sts
+      - cloudformation
+      - dynamodb
+      - sqs
+      - sns
+    blockedSubcommands:
+      - iam delete-user
+      - iam delete-role
+      - ec2 terminate-instances
+      - s3 rb  # remove bucket
+    allowedFlags:
+      - --region
+      - --output
+      - --profile
+      - --query
+      - --no-paginate
+      - --dry-run
+    blockedFlags:
+      - --debug  # Can expose sensitive info
+    requiresAuth: true
+    authEnvVars:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+    resourceLimits:
+      maxMemoryMb: 512
+      maxCpuPercent: 50
+      maxExecutionSeconds: 300
+    seccompProfile: permissive  # Cloud CLIs need additional syscalls
+
+  # Google Cloud CLI
+  gcloud:
+    name: gcloud
+    displayName: Google Cloud CLI
+    description: Google Cloud Platform command-line interface
+    version: "456.0.0"
+    category: cloud
+    installMethod: BINARY
+    installUrl: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-456.0.0-linux-x86_64.tar.gz
+    binaryPath: /opt/tools/gcloud/bin/gcloud
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - compute
+      - storage
+      - functions
+      - run
+      - pubsub
+      - iam
+      - projects
+      - config
+    blockedSubcommands:
+      - compute instances delete
+      - iam service-accounts delete
+      - projects delete
+    allowedFlags:
+      - --project
+      - --region
+      - --zone
+      - --format
+      - --quiet
+    blockedFlags:
+      - --verbosity=debug
+    requiresAuth: true
+    authEnvVars:
+      - GOOGLE_APPLICATION_CREDENTIALS
+      - CLOUDSDK_CORE_PROJECT
+    resourceLimits:
+      maxMemoryMb: 512
+      maxCpuPercent: 50
+      maxExecutionSeconds: 300
+    seccompProfile: permissive  # Cloud CLIs need additional syscalls
+
+  # Azure CLI
+  az:
+    name: az
+    displayName: Azure CLI
+    description: Microsoft Azure command-line interface
+    version: "2.55.0"
+    category: cloud
+    installMethod: BINARY
+    installUrl: https://aka.ms/InstallAzureCLIDeb
+    binaryPath: /opt/tools/az/az
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - account
+      - group
+      - vm
+      - storage
+      - network
+      - webapp
+      - functionapp
+      - keyvault
+      - aks
+    blockedSubcommands:
+      - vm delete
+      - group delete
+      - account clear
+      - keyvault delete
+    allowedFlags:
+      - --subscription
+      - --resource-group
+      - --output
+      - --query
+      - --location
+    blockedFlags:
+      - --debug
+      - --verbose
+    requiresAuth: true
+    authEnvVars:
+      - AZURE_CLIENT_ID
+      - AZURE_CLIENT_SECRET
+      - AZURE_TENANT_ID
+      - AZURE_SUBSCRIPTION_ID
+    resourceLimits:
+      maxMemoryMb: 512
+      maxCpuPercent: 50
+      maxExecutionSeconds: 300
+    seccompProfile: permissive  # Cloud CLIs need additional syscalls
+
+  # Kubernetes CLI
+  kubectl:
+    name: kubectl
+    displayName: Kubernetes CLI
+    description: Kubernetes command-line tool
+    version: "1.29.0"
+    category: container
+    installMethod: BINARY
+    installUrl: https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
+    binaryPath: /opt/tools/kubectl/kubectl
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - get
+      - describe
+      - logs
+      - top
+      - config
+      - api-resources
+      - explain
+      - auth
+      - version
+    blockedSubcommands:
+      - delete
+      - apply
+      - create
+      - patch
+      - replace
+      - exec
+      - run
+      - edit
+    allowedFlags:
+      - --namespace
+      - -n
+      - --output
+      - -o
+      - --selector
+      - -l
+      - --all-namespaces
+      - -A
+      - --context
+      - --kubeconfig
+    blockedFlags:
+      - --as  # Impersonation
+      - --as-group
+    requiresAuth: true
+    authEnvVars:
+      - KUBECONFIG
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    seccompProfile: strict
+
+  # Helm - Kubernetes package manager
+  helm:
+    name: helm
+    displayName: Helm
+    description: Kubernetes package manager
+    version: "3.14.0"
+    category: container
+    installMethod: BINARY
+    installUrl: https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz
+    binaryPath: /opt/tools/helm/helm
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - list
+      - status
+      - history
+      - get
+      - show
+      - search
+      - repo list
+      - template
+      - lint
+    blockedSubcommands:
+      - install
+      - upgrade
+      - uninstall
+      - delete
+      - rollback
+      - repo add
+      - repo remove
+    allowedFlags:
+      - --namespace
+      - -n
+      - --output
+      - -o
+      - --kube-context
+    blockedFlags: []
+    requiresAuth: true
+    authEnvVars:
+      - KUBECONFIG
+      - HELM_KUBECONTEXT
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    seccompProfile: strict
+
+  # Terraform CLI
+  terraform:
+    name: terraform
+    displayName: Terraform
+    description: Infrastructure as Code tool
+    version: "1.7.0"
+    category: iac
+    installMethod: BINARY
+    installUrl: https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip
+    binaryPath: /opt/tools/terraform/terraform
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - version
+      - validate
+      - fmt
+      - plan
+      - show
+      - state list
+      - state show
+      - providers
+      - output
+      - graph
+    blockedSubcommands:
+      - apply
+      - destroy
+      - import
+      - taint
+      - untaint
+      - state rm
+      - state mv
+      - force-unlock
+    allowedFlags:
+      - -var
+      - -var-file
+      - -target
+      - -out
+      - -input=false
+      - -no-color
+      - -json
+    blockedFlags:
+      - -auto-approve  # Dangerous for apply/destroy
+      - -lock=false
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 1024
+      maxCpuPercent: 75
+      maxExecutionSeconds: 600
+    seccompProfile: permissive  # Terraform needs additional syscalls for plugins
+
+  # jq - JSON processor
+  jq:
+    name: jq
+    displayName: jq
+    description: Lightweight command-line JSON processor
+    version: "1.7.1"
+    category: utility
+    installMethod: BINARY
+    installUrl: https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+    binaryPath: /bin/jq
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands: []  # jq doesn't have subcommands
+    blockedSubcommands: []
+    allowedFlags:
+      - -r
+      - -c
+      - -e
+      - -s
+      - -S
+      - --tab
+      - -M
+      - -C
+    blockedFlags: []
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 128
+      maxCpuPercent: 25
+      maxExecutionSeconds: 60
+    seccompProfile: strict
+
+  # yq - YAML processor
+  yq:
+    name: yq
+    displayName: yq
+    description: Lightweight command-line YAML processor
+    version: "4.40.5"
+    category: utility
+    installMethod: BINARY
+    installUrl: https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64
+    binaryPath: /opt/tools/yq/yq
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -r
+      - -o
+      - -P
+      - -I
+      - -M
+      - -C
+    blockedFlags: []
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 128
+      maxCpuPercent: 25
+      maxExecutionSeconds: 60
+    seccompProfile: strict
+
+  # curl - Data transfer tool
+  curl:
+    name: curl
+    displayName: curl
+    description: Command-line tool for transferring data with URLs
+    version: "8.5.0"
+    category: utility
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /bin/curl
+    checksum: ""
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -s
+      - -S
+      - -f
+      - -L
+      - -o
+      - -O
+      - -H
+      - -X
+      - -d
+      - --data
+      - -u
+      - --user
+      - -k
+      - --insecure
+      - -w
+      - --write-out
+      - --connect-timeout
+      - --max-time
+      - -I
+      - --head
+    blockedFlags:
+      - --upload-file  # Restrict file uploads
+      - -T
+      - --proxy  # Restrict proxy usage
+      - -x
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # Camunda 8 CLI (c8ctl) - Camunda Platform 8 management
+  c8ctl:
+    name: c8ctl
+    displayName: Camunda 8 CLI
+    description: Command-line tool for Camunda Platform 8 management
+    version: "8.7.0"
+    category: camunda
+    installMethod: BINARY
+    installUrl: https://github.com/camunda/camunda/releases/download/8.7.0/c8ctl-linux-amd64.tar.gz
+    binaryPath: /opt/tools/c8ctl/c8ctl
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - cluster
+      - process
+      - decision
+      - incident
+      - job
+      - message
+      - signal
+      - resource
+      - variable
+      - status
+      - version
+    blockedSubcommands:
+      - delete  # Prevent destructive operations
+      - cancel
+    allowedFlags:
+      - --address
+      - --clientId
+      - --clientSecret
+      - --authzUrl
+      - --audience
+      - --insecure
+      - --output
+      - -o
+      - --format
+    blockedFlags: []
+    requiresAuth: true
+    authEnvVars:
+      - ZEEBE_ADDRESS
+      - ZEEBE_CLIENT_ID
+      - ZEEBE_CLIENT_SECRET
+      - ZEEBE_AUTHORIZATION_SERVER_URL
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # zbctl - Legacy Zeebe CLI
+  zbctl:
+    name: zbctl
+    displayName: Zeebe CLI
+    description: Legacy command-line tool for Zeebe (use c8ctl for Camunda 8)
+    version: "8.5.0"
+    category: camunda
+    installMethod: BINARY
+    installUrl: https://github.com/camunda/zeebe/releases/download/8.5.0/zbctl.linux.tar.gz
+    binaryPath: /opt/tools/zbctl/zbctl
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - status
+      - topology
+      - deploy
+      - create
+      - publish
+      - resolve
+      - activate
+      - complete
+      - fail
+      - update
+      - version
+    blockedSubcommands:
+      - delete
+      - cancel
+    allowedFlags:
+      - --address
+      - --clientId
+      - --clientSecret
+      - --authzUrl
+      - --audience
+      - --insecure
+    blockedFlags: []
+    requiresAuth: true
+    authEnvVars:
+      - ZEEBE_ADDRESS
+      - ZEEBE_CLIENT_ID
+      - ZEEBE_CLIENT_SECRET
+      - ZEEBE_AUTHORIZATION_SERVER_URL
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # GitHub CLI
+  gh:
+    name: gh
+    displayName: GitHub CLI
+    description: GitHub command-line interface
+    version: "2.45.0"
+    category: vcs
+    installMethod: BINARY
+    installUrl: https://github.com/cli/cli/releases/download/v2.45.0/gh_2.45.0_linux_amd64.tar.gz
+    binaryPath: /opt/tools/gh/gh
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands:
+      - api
+      - issue
+      - pr
+      - repo
+      - release
+      - workflow
+      - run
+      - gist
+      - search
+      - project
+      - status
+    blockedSubcommands:
+      - repo delete
+      - repo archive
+      - auth logout
+      - config set
+    allowedFlags:
+      - --repo
+      - -R
+      - --json
+      - --jq
+      - --template
+      - --limit
+      - --state
+      - --label
+      - --assignee
+      - --web
+    blockedFlags: []
+    requiresAuth: true
+    authEnvVars:
+      - GH_TOKEN
+      - GITHUB_TOKEN
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # HTTPie - User-friendly HTTP client
+  http:
+    name: http
+    displayName: HTTPie
+    description: User-friendly command-line HTTP client
+    version: "3.2.2"
+    category: utility
+    installMethod: BINARY
+    installUrl: https://github.com/httpie/cli/releases/download/3.2.2/httpie-3.2.2-linux-x86_64
+    binaryPath: /opt/tools/httpie/http
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - --json
+      - -j
+      - --form
+      - -f
+      - --headers
+      - -h
+      - --body
+      - -b
+      - --verbose
+      - -v
+      - --offline
+      - --timeout
+      - --check-status
+      - --follow
+      - --max-redirects
+      - --output
+      - -o
+      - --download
+      - -d
+    blockedFlags:
+      - --proxy
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # kcat (kafkacat) - Kafka producer/consumer
+  kcat:
+    name: kcat
+    displayName: kcat
+    description: Apache Kafka producer and consumer tool (formerly kafkacat)
+    version: "1.7.1"
+    category: messaging
+    installMethod: BINARY
+    installUrl: https://github.com/edenhill/kcat/releases/download/1.7.1/kcat-1.7.1-linux-amd64
+    binaryPath: /opt/tools/kcat/kcat
+    checksum: sha256:placeholder-update-with-actual-checksum
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -b
+      - -t
+      - -p
+      - -G
+      - -C
+      - -P
+      - -L
+      - -Q
+      - -o
+      - -c
+      - -e
+      - -q
+      - -X
+      - -K
+      - -D
+    blockedFlags: []
+    requiresAuth: false
+    authEnvVars:
+      - KCAT_BROKERS
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    networkAccess: true
+    seccompProfile: network
+
+  # psql - PostgreSQL client
+  psql:
+    name: psql
+    displayName: PostgreSQL Client
+    description: PostgreSQL interactive terminal
+    version: "16.0"
+    category: database
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /usr/bin/psql
+    checksum: ""
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -h
+      - --host
+      - -p
+      - --port
+      - -U
+      - --username
+      - -d
+      - --dbname
+      - -c
+      - --command
+      - -f
+      - --file
+      - -t
+      - --tuples-only
+      - -A
+      - --no-align
+      - -F
+      - --field-separator
+      - -q
+      - --quiet
+      - -o
+      - --output
+    blockedFlags:
+      - --single-transaction  # Agent shouldn't batch transactions
+    requiresAuth: true
+    authEnvVars:
+      - PGHOST
+      - PGPORT
+      - PGUSER
+      - PGPASSWORD
+      - PGDATABASE
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 300
+    networkAccess: true
+    seccompProfile: network
+
+  # mysql - MySQL client
+  mysql:
+    name: mysql
+    displayName: MySQL Client
+    description: MySQL command-line client
+    version: "8.0"
+    category: database
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /usr/bin/mysql
+    checksum: ""
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -h
+      - --host
+      - -P
+      - --port
+      - -u
+      - --user
+      - -p
+      - --password
+      - -D
+      - --database
+      - -e
+      - --execute
+      - -N
+      - --skip-column-names
+      - -B
+      - --batch
+      - -s
+      - --silent
+      - --table
+      - --xml
+    blockedFlags:
+      - --local-infile  # Security risk
+    requiresAuth: true
+    authEnvVars:
+      - MYSQL_HOST
+      - MYSQL_TCP_PORT
+      - MYSQL_USER
+      - MYSQL_PWD
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 300
+    networkAccess: true
+    seccompProfile: network
+
+  # redis-cli - Redis client
+  redis-cli:
+    name: redis-cli
+    displayName: Redis CLI
+    description: Redis command-line client
+    version: "7.2"
+    category: database
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /usr/bin/redis-cli
+    checksum: ""
+    allowedSubcommands:
+      - GET
+      - SET
+      - MGET
+      - MSET
+      - HGET
+      - HSET
+      - HGETALL
+      - LPUSH
+      - RPUSH
+      - LPOP
+      - RPOP
+      - LRANGE
+      - SADD
+      - SMEMBERS
+      - SISMEMBER
+      - KEYS
+      - EXISTS
+      - TTL
+      - EXPIRE
+      - INFO
+      - PING
+      - DBSIZE
+      - SCAN
+    blockedSubcommands:
+      - FLUSHDB
+      - FLUSHALL
+      - DEBUG
+      - CONFIG
+      - SHUTDOWN
+      - SLAVEOF
+      - REPLICAOF
+      - BGSAVE
+      - BGREWRITEAOF
+    allowedFlags:
+      - -h
+      - -p
+      - -a
+      - -n
+      - --no-auth-warning
+      - --csv
+      - --json
+      - -c
+    blockedFlags:
+      - --rdb
+      - --pipe
+    requiresAuth: true
+    authEnvVars:
+      - REDIS_HOST
+      - REDIS_PORT
+      - REDIS_PASSWORD
+    resourceLimits:
+      maxMemoryMb: 128
+      maxCpuPercent: 25
+      maxExecutionSeconds: 60
+    networkAccess: true
+    seccompProfile: network
+
+  # Python 3 - Python interpreter (SECURED via wrapper)
+  # The safe-python3 wrapper blocks dangerous imports and operations:
+  # - Process execution (os, subprocess, pty)
+  # - Network access (socket, urllib, requests)
+  # - System access (ctypes, multiprocessing, threading)
+  # - Code execution (exec, eval, __import__)
+  # - Serialization (pickle, marshal)
+  # Only inline code (-c) is allowed, no file execution
+  python3:
+    name: python3
+    displayName: Python 3 (Secured)
+    description: Secured Python 3 interpreter - blocks dangerous imports (os, subprocess, socket, etc.)
+    version: "3.11"
+    category: scripting
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /bin/safe-python3
+    checksum: ""
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -c  # Inline code only
+    blockedFlags:
+      - -i  # Interactive mode not allowed
+      - -m  # Module mode handled by wrapper with allowlist
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 60
+    seccompProfile: strict
+    # Allowed modules when using -m flag (via wrapper)
+    allowedModules:
+      - json
+      - math
+      - datetime
+      - re
+      - string
+      - collections
+      - itertools
+      - functools
+      - operator
+      - decimal
+      - fractions
+      - statistics
+      - random
+      - base64
+      - hashlib
+      - hmac
+      - html
+      - csv
+      - textwrap
+      - difflib
+      - enum
+      - dataclasses
+      - typing
+      - copy
+      - pprint
+      - uuid
+    # Blocked module patterns (checked by wrapper)
+    blockedModulePatterns:
+      - os
+      - subprocess
+      - socket
+      - urllib
+      - requests
+      - http
+      - ctypes
+      - multiprocessing
+      - threading
+      - pickle
+      - marshal
+      - shutil
+      - tempfile
+      - importlib
+      - builtins
+      - signal
+      - resource
+      - fcntl
+      - mmap
+      - pty
+      - asyncio
+      - aiohttp
+
+  # git - Version control
+  git:
+    name: git
+    displayName: Git
+    description: Distributed version control system
+    version: "2.43.0"
+    category: utility
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /bin/git
+    checksum: ""
+    allowedSubcommands:
+      - status
+      - log
+      - diff
+      - show
+      - branch
+      - tag
+      - remote
+      - ls-remote
+      - rev-parse
+      - describe
+      - shortlog
+      - blame
+      - ls-files
+      - ls-tree
+    blockedSubcommands:
+      - push
+      - pull
+      - fetch
+      - clone
+      - checkout
+      - merge
+      - rebase
+      - reset
+      - clean
+      - stash
+      - config  # Can set hooks
+    allowedFlags:
+      - --oneline
+      - --graph
+      - --all
+      - --decorate
+      - -n
+      - --stat
+      - --name-only
+      - --name-status
+      - --pretty
+      - --format
+    blockedFlags:
+      - --exec  # Can execute arbitrary commands
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 120
+    seccompProfile: strict
+
+  # safe-python3 - Secured Python interpreter (alias for python3)
+  # This is the same as python3 but registered under the name safe-python3
+  # to match the wrapper script and element template tool selection
+  safe-python3:
+    name: safe-python3
+    displayName: Safe Python 3
+    description: Secured Python 3 interpreter - blocks dangerous imports (os, subprocess, socket, etc.)
+    version: "3.11"
+    category: scripting
+    installMethod: SYSTEM
+    installUrl: ""
+    binaryPath: /bin/safe-python3
+    checksum: ""
+    allowedSubcommands: []
+    blockedSubcommands: []
+    allowedFlags:
+      - -c  # Inline code only
+    blockedFlags:
+      - -i  # Interactive mode not allowed
+      - -m  # Module mode handled by wrapper with allowlist
+    requiresAuth: false
+    authEnvVars: []
+    resourceLimits:
+      maxMemoryMb: 256
+      maxCpuPercent: 25
+      maxExecutionSeconds: 60
+    seccompProfile: strict
+    allowedModules:
+      - json
+      - math
+      - datetime
+      - re
+      - string
+      - collections
+      - itertools
+      - functools
+      - operator
+      - decimal
+      - fractions
+      - statistics
+      - random
+      - base64
+      - hashlib
+      - hmac
+      - html
+      - csv
+      - textwrap
+      - difflib
+      - enum
+      - dataclasses
+      - typing
+      - copy
+      - pprint
+      - uuid
+    blockedModulePatterns:
+      - os
+      - subprocess
+      - socket
+      - urllib
+      - requests
+      - http
+      - ctypes
+      - multiprocessing
+      - threading
+      - pickle
+      - marshal
+      - shutil
+      - tempfile
+      - importlib
+      - builtins
+      - signal
+      - resource
+      - fcntl
+      - mmap
+      - pty
+      - asyncio
+      - aiohttp
+
+# Tool categories for grouping and policy application
+categories:
+  cloud:
+    description: Cloud provider CLI tools
+    defaultSeccompProfile: default
+    defaultNetworkAccess: true
+  container:
+    description: Container and orchestration tools
+    defaultSeccompProfile: strict
+    defaultNetworkAccess: true
+  iac:
+    description: Infrastructure as Code tools
+    defaultSeccompProfile: default
+    defaultNetworkAccess: true
+  utility:
+    description: General utility tools
+    defaultSeccompProfile: strict
+    defaultNetworkAccess: false
+
+# Global settings
+settings:
+  # Default resource limits if not specified per-tool
+  defaultResourceLimits:
+    maxMemoryMb: 256
+    maxCpuPercent: 25
+    maxExecutionSeconds: 120
+  
+  # Tool installation directory
+  toolsBaseDir: /opt/tools
+  
+  # Cache settings
+  cacheEnabled: true
+  cacheTtlHours: 24
+  
+  # Checksum verification
+  verifyChecksums: true
+  
+  # Allow custom tool versions per tenant
+  allowTenantVersionOverride: false

@@ -1,0 +1,284 @@
+# Default values for sandbox-connector
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  image:
+    registry: ""
+    pullSecrets: []
+
+# Replica count (consider 3 for HA)
+replicaCount: 2
+
+# Image configuration
+image:
+  repository: camunda/sandbox-connector
+  tag: ""  # Defaults to appVersion
+  pullPolicy: IfNotPresent
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # Required for nsjail to work
+  automountServiceAccountToken: false
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/actuator/prometheus"
+
+# Pod labels
+podLabels: {}
+
+# Pod security context - IMPORTANT for nsjail
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  # Required for nsjail namespace operations
+  sysctls:
+    - name: kernel.unprivileged_userns_clone
+      value: "1"
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # nsjail needs write access
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+    add:
+      # Required for nsjail
+      - SYS_ADMIN
+      - NET_ADMIN
+      - SYS_PTRACE
+      - SETUID
+      - SETGID
+  seccompProfile:
+    type: Unconfined  # nsjail manages its own seccomp
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: sandbox-connector.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Resource limits
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity (anti-affinity for HA)
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sandbox-connector
+          topologyKey: kubernetes.io/hostname
+
+# Liveness probe
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Startup probe
+startupProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
+
+# Application configuration
+config:
+  # Sandbox settings
+  sandbox:
+    enabled: true
+    nsjailPath: /usr/bin/nsjail
+    workspaceBase: /sandbox/workspaces
+    toolsDirectory: /sandbox/tools
+    seccompProfilesDirectory: /sandbox/seccomp
+    sandboxRootfs: /sandbox/rootfs
+    defaultTenantId: default
+    
+  # Execution settings
+  execution:
+    threadPoolSize: 10
+    queueSize: 100
+    defaultTimeoutSeconds: 30
+    maxTimeoutSeconds: 300
+    gracePeriodSeconds: 5
+    defaultMemoryMb: 256
+    maxMemoryMb: 2048
+    maxOutputBytes: 1048576
+    
+  # Security settings
+  security:
+    strictMode: true
+    allowShellFeatures: false
+    dropAllCapabilities: true
+    useUserNamespace: true
+    useNetworkNamespace: true
+    usePidNamespace: true
+    useMountNamespace: true
+    sandboxUid: 1000
+    sandboxGid: 1000
+    
+  # Metrics settings
+  metrics:
+    enabled: true
+    prefix: sandbox_connector
+    includeTenantTag: true
+    includeCommandTag: false
+
+# External configuration (ConfigMaps)
+externalConfig:
+  # Mount tool registry from ConfigMap
+  toolRegistry:
+    enabled: false
+    configMapName: sandbox-tool-registry
+    mountPath: /config/tools-registry.yaml
+    subPath: registry.yaml
+    
+  # Mount tenant policies from ConfigMap
+  tenantPolicies:
+    enabled: false
+    configMapName: sandbox-tenant-policies
+    mountPath: /config/tenant-policies.yaml
+    subPath: policies.yaml
+
+# Secrets configuration
+secrets:
+  # Create secrets for cloud credentials
+  create: false
+  
+  # AWS credentials
+  aws:
+    enabled: false
+    accessKeyId: ""
+    secretAccessKey: ""
+    sessionToken: ""
+    
+  # GCP credentials
+  gcp:
+    enabled: false
+    serviceAccountKey: ""
+    
+  # Azure credentials
+  azure:
+    enabled: false
+    clientId: ""
+    clientSecret: ""
+    tenantId: ""
+    subscriptionId: ""
+    
+  # Kubernetes config (for kubectl)
+  kubeconfig:
+    enabled: false
+    config: ""
+
+# Persistence for tool cache
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Network policies
+networkPolicy:
+  enabled: true
+  # Allow egress to cloud providers
+  egressRules:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Block metadata endpoints
+              - 169.254.169.254/32
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Extra environment variables
+extraEnv: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Extra volumes
+extraVolumes: []
+
+# Priority class name
+priorityClassName: ""
+
+# Topology spread constraints
+topologySpreadConstraints: []
+
+# Init containers
+initContainers: []
+
+# Sidecar containers
+sidecars: []

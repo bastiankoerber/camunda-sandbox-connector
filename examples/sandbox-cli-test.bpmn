@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_SandboxTest" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
+  <bpmn:process id="sandbox-cli-test" name="Sandbox CLI Connector Test" isExecutable="true">
+    <bpmn:startEvent id="StartEvent" name="Start Test">
+      <bpmn:outgoing>Flow_Start_To_Fetch</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <bpmn:serviceTask id="FetchAndParseAPI" name="Fetch JSON with curl" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="1">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+        <zeebe:ioMapping>
+          <zeebe:input source="curl -s https://httpbin.org/json" target="command" />
+          <zeebe:input source="=[&#34;curl&#34;]" target="allowedTools" />
+          <zeebe:input source="={&#34;curl&#34;: &#34;latest&#34;}" target="toolVersions" />
+          <zeebe:input source="30" target="timeoutSeconds" />
+          <zeebe:input source="256" target="memoryLimitMb" />
+          <zeebe:input source="1000" target="cpuLimitMillis" />
+          <zeebe:input source="FULL" target="networkAccess" />
+          <zeebe:input source="development" target="tenantId" />
+        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <zeebe:header key="resultVariable" value="sandboxResult" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_To_Fetch</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fetch_To_Python</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <bpmn:serviceTask id="PythonAnalytics" name="Python Analytics" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="6">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+        <zeebe:ioMapping>
+          <zeebe:input source="safe-python3" target="tool" />
+          <zeebe:input source="script" target="executionMode" />
+          <zeebe:input source="python" target="scriptLanguage" />
+          <zeebe:input source="import json
+import math
+import statistics
+import hashlib
+import base64
+from datetime import datetime
+from collections import Counter
+
+users = [
+    dict(name='Alice', age=28, score=85.5),
+    dict(name='Bob', age=34, score=92.0),
+    dict(name='Charlie', age=22, score=78.3),
+    dict(name='Diana', age=31, score=95.7),
+    dict(name='Eve', age=27, score=88.2)
+]
+
+ages = [u['age'] for u in users]
+scores = [u['score'] for u in users]
+
+stats = dict(
+    age_stats=dict(mean=statistics.mean(ages), median=statistics.median(ages), stdev=round(statistics.stdev(ages), 2)),
+    score_stats=dict(mean=round(statistics.mean(scores), 2), median=statistics.median(scores), stdev=round(statistics.stdev(scores), 2))
+)
+
+top = max(users, key=lambda x: x['score'])
+content_hash = hashlib.sha256(json.dumps(users).encode()).hexdigest()[:12]
+summary = 'Top: ' + top['name'] + ' (' + str(top['score']) + ')'
+summary_b64 = base64.b64encode(summary.encode()).decode()
+
+calculations = dict(pi=round(math.pi, 6), sqrt_sum_scores=round(math.sqrt(sum(scores)), 2))
+letter_freq = dict(Counter(''.join([u['name'].lower() for u in users])).most_common(5))
+
+result = dict(
+    statistics=stats,
+    top_performer=top,
+    content_hash=content_hash,
+    summary_base64=summary_b64,
+    calculations=calculations,
+    letter_frequency=letter_freq,
+    processed_at=datetime.now().isoformat()
+)
+
+print(json.dumps(result, indent=2))" target="scriptContent" />
+          <zeebe:input source="=[&#34;safe-python3&#34;]" target="allowedTools" />
+          <zeebe:input source="30" target="timeoutSeconds" />
+          <zeebe:input source="256" target="memoryLimitMb" />
+          <zeebe:input source="NONE" target="networkAccess" />
+          <zeebe:input source="development" target="tenantId" />
+        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <zeebe:header key="resultVariable" value="pythonResult" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Fetch_To_Python</bpmn:incoming>
+      <bpmn:outgoing>Flow_Python_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <bpmn:endEvent id="EndEvent" name="Test Complete">
+      <bpmn:incoming>Flow_Python_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:sequenceFlow id="Flow_Start_To_Fetch" sourceRef="StartEvent" targetRef="FetchAndParseAPI" />
+    <bpmn:sequenceFlow id="Flow_Fetch_To_Python" sourceRef="FetchAndParseAPI" targetRef="PythonAnalytics" />
+    <bpmn:sequenceFlow id="Flow_Python_To_End" sourceRef="PythonAnalytics" targetRef="EndEvent" />
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="sandbox-cli-test">
+      <bpmndi:BPMNShape id="StartEvent_di" bpmnElement="StartEvent">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="148" y="145" width="49" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="FetchAndParseAPI_di" bpmnElement="FetchAndParseAPI">
+        <dc:Bounds x="250" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PythonAnalytics_di" bpmnElement="PythonAnalytics">
+        <dc:Bounds x="410" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_di" bpmnElement="EndEvent">
+        <dc:Bounds x="572" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="556" y="145" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_To_Fetch_di" bpmnElement="Flow_Start_To_Fetch">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="250" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fetch_To_Python_di" bpmnElement="Flow_Fetch_To_Python">
+        <di:waypoint x="350" y="120" />
+        <di:waypoint x="410" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Python_To_End_di" bpmnElement="Flow_Python_To_End">
+        <di:waypoint x="510" y="120" />
+        <di:waypoint x="572" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

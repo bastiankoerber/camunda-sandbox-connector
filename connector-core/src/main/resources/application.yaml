@@ -1,0 +1,83 @@
+sandbox:
+  enabled: true
+  
+  # Paths
+  nsjail-path: /usr/bin/nsjail
+  workspace-base: /sandbox/workspaces
+  tools-directory: /sandbox/tools
+  seccomp-profiles-directory: /sandbox/seccomp
+  sandbox-rootfs: /sandbox/rootfs
+  temp-directory: /sandbox/tmp
+  tenant-policies-path: /config/tenant-policies.yaml
+  tool-registry-path: /config/tools-registry.yaml
+  
+  # Default tenant
+  default-tenant-id: default
+  
+  # Execution settings
+  execution:
+    thread-pool-size: 10
+    queue-size: 100
+    default-timeout-seconds: 30
+    max-timeout-seconds: 300
+    grace-period-seconds: 5
+    default-memory-mb: 256
+    max-memory-mb: 2048
+    default-cpu-millis: 1000
+    max-cpu-millis: 4000
+    max-output-bytes: 1048576
+  
+  # Security settings
+  security:
+    strict-mode: true
+    allow-shell-features: false
+    default-seccomp-profile: default.json  # Note: This is the strict profile (renamed from strict.json)
+    drop-all-capabilities: true
+    use-user-namespace: true
+    use-network-namespace: true
+    use-pid-namespace: true
+    use-mount-namespace: true
+    sandbox-uid: 1000
+    sandbox-gid: 1000
+    blocked-patterns:
+      - "\\brm\\s+-rf"
+      - "\\bsudo\\b"
+      - "\\bsu\\b"
+    blocked-paths:
+      - /etc/passwd
+      - /etc/shadow
+      - /root
+  
+  # Metrics settings
+  metrics:
+    enabled: true
+    prefix: sandbox_connector
+    include-tenant-tag: true
+    include-command-tag: false
+
+# Spring Boot settings
+spring:
+  application:
+    name: sandbox-connector
+
+# Logging
+logging:
+  level:
+    root: INFO
+    io.camunda.connector.sandbox: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: sandbox-connector
+description: Camunda Sandbox CLI Connector - Secure CLI command execution in sandboxed environments
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/camunda/sandbox-connector
+sources:
+  - https://github.com/camunda/sandbox-connector
+maintainers:
+  - name: Camunda Platform Team
+    email: platform@camunda.com
+keywords:
+  - camunda
+  - connector
+  - sandbox
+  - cli
+  - security
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: integration
