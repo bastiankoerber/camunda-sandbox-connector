@@ -5,12 +5,16 @@ A secure connector for executing CLI commands in a sandboxed environment for Cam
 ## Table of Contents
 
 - [Features](#features)
+- [Architecture](#architecture)
 - [Quick Start](#quick-start)
+- [Execution Modes](#execution-modes)
 - [Element Template Properties](#element-template-properties)
 - [Tenant Profiles](#tenant-profiles)
+- [Tool Reference](#tool-reference)
 - [Security Model](#security-model)
 - [Output Structure](#output-structure)
 - [Examples](#examples)
+- [Common Workflows](#common-workflows)
 - [Configuration](#configuration)
 - [Monitoring](#monitoring)
 - [Troubleshooting](#troubleshooting)
@@ -19,12 +23,64 @@ A secure connector for executing CLI commands in a sandboxed environment for Cam
 ## Features
 
 - **Secure Sandboxing**: Uses nsjail (Google's battle-tested sandbox) for process isolation
+- **Two Execution Modes**: Command mode for CLI tools, Script mode for Python scripts
 - **Multi-Tenant Support**: Per-tenant security policies and resource limits
 - **Tool Allowlisting**: Only pre-approved CLI tools can be executed
 - **Resource Limits**: CPU, memory, timeout constraints per execution
 - **Command Injection Prevention**: Blocks shell operators, validates arguments
 - **Network Isolation**: Configurable network access (none, internal, restricted, full)
 - **Seccomp Profiles**: System call filtering for additional security
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Camunda Platform 8.9+                       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐  │
+│  │   Modeler   │    │    Zeebe    │    │    Operate/Tasklist │  │
+│  │  (BPMN +    │───▶│   Gateway   │◀───│                     │  │
+│  │  Template)  │    │             │    │                     │  │
+│  └─────────────┘    └──────┬──────┘    └─────────────────────┘  │
+└────────────────────────────┼────────────────────────────────────┘
+                             │ Job
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Sandbox CLI Connector                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
+│  │   Security   │  │    Tenant    │  │    Execution Engine    │ │
+│  │  Validator   │──│    Policy    │──│                        │ │
+│  │              │  │   Manager    │  │  ┌──────────────────┐  │ │
+│  │ • Tool check │  │              │  │  │   Command Mode   │  │ │
+│  │ • Arg block  │  │ • Allowlist  │  │  │   (jq, curl...)  │  │ │
+│  │ • Injection  │  │ • Limits     │  │  ├──────────────────┤  │ │
+│  └──────────────┘  │ • Network    │  │  │   Script Mode    │  │ │
+│                    └──────────────┘  │  │   (Python)       │  │ │
+│                                      │  └────────┬─────────┘  │ │
+│                                      └───────────┼────────────┘ │
+└──────────────────────────────────────────────────┼──────────────┘
+                                                   │
+                                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                          nsjail Sandbox                          │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  • PID namespace isolation    • Read-only root filesystem   ││
+│  │  • Network namespace          • Seccomp syscall filtering   ││
+│  │  • User namespace (non-root)  • cgroups resource limits     ││
+│  │  • Mount namespace            • No capability escalation    ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                              ▼                                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │     CLI Tool (jq, curl, aws, kubectl, safe-python3...)   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Flow:**
+1. User designs workflow in Camunda Modeler using element templates
+2. Workflow deployed to Zeebe, jobs dispatched to connector
+3. Connector validates request against tenant security policy
+4. Command/script executed inside nsjail sandbox
+5. Result returned to workflow (stdout, stderr, exit code)
 
 ## Quick Start
 
@@ -105,6 +161,94 @@ python3 scripts/generate-element-templates.py
 ```
 
 This ensures element templates always match your security policies.
+
+## Execution Modes
+
+The connector supports two execution modes:
+
+### Command Mode
+
+Execute CLI tools with arguments. Best for single-purpose operations like parsing JSON, making HTTP requests, or querying cloud resources.
+
+**How it works:**
+1. Select a CLI tool from the tenant-specific dropdown
+2. Provide arguments (the tool name is added automatically)
+3. Optionally provide stdin data
+4. Command is validated and executed in sandbox
+
+**Security restrictions:**
+- Shell operators (`|`, `&`, `;`, `>`, `<`, `$()`, backticks) are **blocked**
+- Arguments are validated against tenant blocklist
+- Only allowlisted tools can be used
+
+**Example - Parse JSON with jq:**
+```
+Execution Mode: Command
+Tool: jq
+Arguments: '.users[] | select(.active) | .name'
+Input Data: =processVariableWithJson
+```
+
+### Script Mode
+
+Execute multi-line Python scripts. Best for complex data transformations, calculations, or operations requiring multiple steps.
+
+**How it works:**
+1. Select `safe-python3` as the tool
+2. Write your Python script in the Script Content field
+3. Script is written to a temporary file and executed via `safe-python3`
+4. Output (stdout) is captured and returned
+
+**Available Python modules:**
+```
+json, math, statistics, hashlib, base64, datetime, 
+collections, itertools, functools, re, string, textwrap,
+decimal, fractions, random, uuid, urllib.parse
+```
+
+**Security restrictions:**
+- No filesystem access (except reading stdin)
+- No network access (unless tenant allows)
+- No subprocess/os.system calls
+- No import of dangerous modules (os, sys, subprocess, etc.)
+
+**Example - Complex data transformation:**
+```
+Execution Mode: Script
+Tool: safe-python3
+Script Language: python
+Script Content:
+import json
+import statistics
+
+data = json.loads(input())
+values = [item['value'] for item in data['items']]
+
+result = {
+    'count': len(values),
+    'sum': sum(values),
+    'mean': statistics.mean(values),
+    'median': statistics.median(values)
+}
+
+print(json.dumps(result))
+```
+
+**Passing data to scripts:**
+- Use `input()` to read stdin (from Input Data field)
+- Parse JSON input with `json.loads(input())`
+- Print output as JSON with `print(json.dumps(result))`
+
+### Choosing Between Modes
+
+| Use Case | Mode | Why |
+|----------|------|-----|
+| Parse/transform JSON | Command (jq) | jq is faster and more memory efficient |
+| Make HTTP request | Command (curl) | Native tool, handles edge cases |
+| Complex calculations | Script (Python) | Python has math/statistics libraries |
+| Multi-step transformation | Script (Python) | Logic is clearer in Python |
+| String manipulation | Either | jq for JSON paths, Python for regex |
+| Data aggregation | Script (Python) | Python collections/itertools |
 
 ## Element Template Properties
 
@@ -310,6 +454,54 @@ Arguments: get pods -n production -o json
 Network Access: INTERNAL
 ```
 
+## Tool Reference
+
+Quick reference for all available CLI tools across tenants.
+
+### Data Processing Tools
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **jq** | JSON processor | `jq '.users[].name'` | all |
+| **yq** | YAML/JSON/XML processor | `yq -o=json '.spec'` | default, development, infra |
+| **grep** | Pattern matching | `grep -E 'error\|warning'` | default |
+| **sed** | Stream editor | `sed 's/old/new/g'` | default |
+| **awk** | Text processing | `awk '{print $1}'` | default |
+
+### Network Tools
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **curl** | HTTP client | `curl -s https://api.example.com` | development, cloud-ops, monitoring |
+
+### Cloud CLIs
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **aws** | AWS CLI | `aws s3 ls` | cloud-ops |
+| **gcloud** | Google Cloud CLI | `gcloud compute instances list` | cloud-ops |
+| **az** | Azure CLI | `az vm list` | cloud-ops |
+
+### Kubernetes Tools
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **kubectl** | Kubernetes CLI | `kubectl get pods -o json` | development, cloud-ops, monitoring |
+| **helm** | Kubernetes package manager | `helm list -A` | development |
+
+### Infrastructure Tools
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **terraform** | Infrastructure as Code | `terraform plan` | infra-automation |
+| **git** | Version control (read-only) | `git log --oneline -10` | development |
+
+### Script Execution
+
+| Tool | Description | Example | Tenants |
+|------|-------------|---------|---------|
+| **safe-python3** | Sandboxed Python | Multi-line Python scripts | default, development |
+
 ## Security Model
 
 ### Sandboxing with nsjail
@@ -470,6 +662,203 @@ Arguments: plan -no-color
 Network Access: RESTRICTED
 Timeout: 300 seconds
 Memory Limit: 1024 MB
+```
+
+## Common Workflows
+
+Real-world workflow patterns combining multiple connector tasks.
+
+### Workflow 1: API Data Enrichment
+
+Fetch data from an API, transform it, and prepare for downstream processing.
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────┐
+│  Start  │───▶│  Fetch API   │───▶│  Transform   │───▶│   End   │
+│         │    │  (curl)      │    │  (jq)        │    │         │
+└─────────┘    └──────────────┘    └──────────────┘    └─────────┘
+```
+
+**Task 1: Fetch API (curl)**
+```
+Tenant: development
+Tool: curl
+Arguments: -s https://api.example.com/users
+Network: RESTRICTED
+Result Variable: apiResponse
+```
+
+**Task 2: Transform (jq)**
+```
+Tenant: default
+Tool: jq
+Arguments: '[.[] | {id: .id, email: .email, active: .status == "active"}]'
+Input Data: =apiResponse.stdout
+Network: NONE
+Result Variable: transformedUsers
+```
+
+### Workflow 2: Kubernetes Health Check
+
+Monitor pod status across namespaces and aggregate results.
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────┐
+│  Start  │───▶│  Get Pods    │───▶│  Analyze     │───▶│   End   │
+│         │    │  (kubectl)   │    │  (Python)    │    │         │
+└─────────┘    └──────────────┘    └──────────────┘    └─────────┘
+```
+
+**Task 1: Get Pods (kubectl)**
+```
+Tenant: monitoring
+Tool: kubectl
+Arguments: get pods -A -o json
+Network: INTERNAL
+Result Variable: podsJson
+```
+
+**Task 2: Analyze (Python)**
+```
+Tenant: default
+Mode: script
+Tool: safe-python3
+Script Content:
+import json
+data = json.loads(input())
+pods = data['items']
+
+summary = {
+    'total': len(pods),
+    'running': len([p for p in pods if p['status']['phase'] == 'Running']),
+    'pending': len([p for p in pods if p['status']['phase'] == 'Pending']),
+    'failed': len([p for p in pods if p['status']['phase'] == 'Failed']),
+    'namespaces': list(set(p['metadata']['namespace'] for p in pods))
+}
+summary['healthy'] = summary['running'] == summary['total']
+
+print(json.dumps(summary))
+
+Input Data: =podsJson.stdout
+Result Variable: healthStatus
+```
+
+### Workflow 3: Cloud Cost Report
+
+Gather cost data from AWS and format for reporting.
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────┐
+│  Start  │───▶│  Get Costs   │───▶│  Parse JSON  │───▶│  Format      │───▶│   End   │
+│         │    │  (aws)       │    │  (jq)        │    │  (Python)    │    │         │
+└─────────┘    └──────────────┘    └──────────────┘    └──────────────┘    └─────────┘
+```
+
+**Task 1: Get Cost Data (aws)**
+```
+Tenant: cloud-ops
+Tool: aws
+Arguments: ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31 --granularity MONTHLY --metrics BlendedCost --output json
+Network: RESTRICTED
+Memory: 512 MB
+Result Variable: awsCosts
+```
+
+**Task 2: Extract Costs (jq)**
+```
+Tenant: default
+Tool: jq
+Arguments: '.ResultsByTime[0].Total.BlendedCost'
+Input Data: =awsCosts.stdout
+Result Variable: costData
+```
+
+**Task 3: Format Report (Python)**
+```
+Tenant: default
+Mode: script
+Tool: safe-python3
+Script Content:
+import json
+from datetime import datetime
+
+cost = json.loads(input())
+amount = float(cost['Amount'])
+currency = cost['Unit']
+
+report = {
+    'period': 'January 2024',
+    'total_cost': round(amount, 2),
+    'currency': currency,
+    'generated_at': datetime.now().isoformat(),
+    'status': 'over_budget' if amount > 10000 else 'within_budget'
+}
+
+print(json.dumps(report, indent=2))
+
+Input Data: =costData.stdout
+Result Variable: costReport
+```
+
+### Workflow 4: GitOps Validation
+
+Validate Kubernetes manifests before deployment.
+
+```
+┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────┐
+│  Start  │───▶│  Validate    │───▶│  Check       │───▶│   End   │
+│         │    │  YAML (yq)   │    │  (Python)    │    │         │
+└─────────┘    └──────────────┘    └──────────────┘    └─────────┘
+```
+
+**Task 1: Parse YAML (yq)**
+```
+Tenant: default
+Tool: yq
+Arguments: -o=json '.'
+Input Data: =manifestYaml
+Result Variable: parsedManifest
+```
+
+**Task 2: Validate (Python)**
+```
+Tenant: default
+Mode: script
+Tool: safe-python3
+Script Content:
+import json
+
+manifest = json.loads(input())
+errors = []
+
+# Check required fields
+if 'apiVersion' not in manifest:
+    errors.append('Missing apiVersion')
+if 'kind' not in manifest:
+    errors.append('Missing kind')
+if 'metadata' not in manifest:
+    errors.append('Missing metadata')
+elif 'name' not in manifest.get('metadata', {}):
+    errors.append('Missing metadata.name')
+
+# Check resource limits for Deployments
+if manifest.get('kind') == 'Deployment':
+    containers = manifest.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
+    for i, c in enumerate(containers):
+        if 'resources' not in c:
+            errors.append(f'Container {i} missing resource limits')
+
+result = {
+    'valid': len(errors) == 0,
+    'errors': errors,
+    'kind': manifest.get('kind'),
+    'name': manifest.get('metadata', {}).get('name')
+}
+
+print(json.dumps(result))
+
+Input Data: =parsedManifest.stdout
+Result Variable: validationResult
 ```
 
 ## Configuration
