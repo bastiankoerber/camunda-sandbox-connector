@@ -1,0 +1,608 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" 
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0" 
+                  id="Definitions_Agent" 
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler" 
+                  exporterVersion="5.44.0" 
+                  modeler:executionPlatform="Camunda Cloud" 
+                  modeler:executionPlatformVersion="8.9.0">
+  
+  <bpmn:process id="agent-with-tools" name="AI Agent with CLI Tools" isExecutable="true">
+    
+    <!-- Process Variables:
+         - userPrompt: The user's request/question
+         - agentContext: Accumulated context from tool executions
+         - toolCalls: Array of tool calls the agent wants to make
+         - currentToolCall: The current tool call being executed
+         - toolResults: Results from tool executions
+         - finalResponse: The agent's final response to the user
+         - maxIterations: Maximum number of agent loops (default: 10)
+         - currentIteration: Current iteration counter
+    -->
+    
+    <bpmn:startEvent id="StartEvent" name="User Request">
+      <bpmn:outgoing>Flow_Start_To_Init</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <!-- Initialize agent context and iteration counter -->
+    <bpmn:scriptTask id="Task_InitAgent" name="Initialize Agent">
+      <bpmn:extensionElements>
+        <zeebe:script expression="={
+          agentContext: [],
+          toolResults: [],
+          currentIteration: 0,
+          maxIterations: if maxIterations = null then 10 else maxIterations,
+          agentState: &quot;thinking&quot;
+        }" resultVariable="agentState" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_To_Init</bpmn:incoming>
+      <bpmn:outgoing>Flow_Init_To_AgentLoop</bpmn:outgoing>
+    </bpmn:scriptTask>
+    
+    <!-- Main Agent Loop -->
+    <bpmn:subProcess id="AgentLoop" name="Agent Reasoning Loop">
+      <bpmn:incoming>Flow_Init_To_AgentLoop</bpmn:incoming>
+      <bpmn:outgoing>Flow_AgentLoop_To_Response</bpmn:outgoing>
+      
+      <bpmn:startEvent id="AgentLoop_Start">
+        <bpmn:outgoing>Flow_AgentLoop_Start_To_Think</bpmn:outgoing>
+      </bpmn:startEvent>
+      
+      <!-- Agent thinks and decides what to do next -->
+      <bpmn:serviceTask id="Task_AgentThink" name="Agent Thinks" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="io.camunda:http-json:1" />
+          <zeebe:ioMapping>
+            <zeebe:input source="POST" target="method" />
+            <zeebe:input source="https://api.openai.com/v1/chat/completions" target="url" />
+            <zeebe:input source="={
+              &quot;Content-Type&quot;: &quot;application/json&quot;,
+              &quot;Authorization&quot;: &quot;Bearer &quot; + openaiApiKey
+            }" target="headers" />
+            <zeebe:input source="={
+              &quot;model&quot;: &quot;gpt-4&quot;,
+              &quot;messages&quot;: [
+                {
+                  &quot;role&quot;: &quot;system&quot;,
+                  &quot;content&quot;: &quot;You are an AI agent with access to CLI tools. You can use tools to help answer questions.
+
+Available tools:
+1. jq - Parse and transform JSON data
+2. yq - Parse and transform YAML data  
+3. curl - Make HTTP requests (GET only for safety)
+4. kubectl - Query Kubernetes clusters (read-only)
+5. python - Run Python scripts for calculations
+
+When you need to use a tool, respond with JSON:
+{
+  \&quot;action\&quot;: \&quot;use_tool\&quot;,
+  \&quot;tool\&quot;: \&quot;tool_name\&quot;,
+  \&quot;arguments\&quot;: \&quot;tool arguments\&quot;,
+  \&quot;input_data\&quot;: \&quot;optional stdin data\&quot;,
+  \&quot;reasoning\&quot;: \&quot;why you need this tool\&quot;
+}
+
+When you have enough information to answer, respond with:
+{
+  \&quot;action\&quot;: \&quot;final_answer\&quot;,
+  \&quot;answer\&quot;: \&quot;your complete answer to the user\&quot;
+}
+
+Always think step by step. Use tools when needed.&quot;
+                },
+                {
+                  &quot;role&quot;: &quot;user&quot;,
+                  &quot;content&quot;: userPrompt
+                }
+              ] + (for result in toolResults return {
+                &quot;role&quot;: &quot;assistant&quot;,
+                &quot;content&quot;: &quot;Tool result for &quot; + result.tool + &quot;:\n&quot; + result.output
+              }),
+              &quot;temperature&quot;: 0.7,
+              &quot;response_format&quot;: { &quot;type&quot;: &quot;json_object&quot; }
+            }" target="body" />
+          </zeebe:ioMapping>
+          <zeebe:taskHeaders>
+            <zeebe:header key="resultVariable" value="llmResponse" />
+          </zeebe:taskHeaders>
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_AgentLoop_Start_To_Think</bpmn:incoming>
+        <bpmn:outgoing>Flow_Think_To_ParseDecision</bpmn:outgoing>
+      </bpmn:serviceTask>
+      
+      <!-- Parse the agent's decision -->
+      <bpmn:scriptTask id="Task_ParseDecision" name="Parse Decision">
+        <bpmn:extensionElements>
+          <zeebe:script expression="={
+            agentDecision: json(llmResponse.body.choices[1].message.content),
+            currentIteration: currentIteration + 1
+          }" resultVariable="parseResult" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_Think_To_ParseDecision</bpmn:incoming>
+        <bpmn:outgoing>Flow_ParseDecision_To_Gateway</bpmn:outgoing>
+      </bpmn:scriptTask>
+      
+      <!-- Decision Gateway: Use Tool or Final Answer? -->
+      <bpmn:exclusiveGateway id="Gateway_Decision" name="Tool or Answer?">
+        <bpmn:incoming>Flow_ParseDecision_To_Gateway</bpmn:incoming>
+        <bpmn:outgoing>Flow_Gateway_To_ToolSubprocess</bpmn:outgoing>
+        <bpmn:outgoing>Flow_Gateway_To_End</bpmn:outgoing>
+        <bpmn:outgoing>Flow_Gateway_To_MaxIterations</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      
+      <!-- Ad-hoc subprocess for tool execution -->
+      <bpmn:adHocSubProcess id="ToolExecutionSubprocess" name="Tool Execution" ordering="Sequential">
+        <bpmn:extensionElements>
+          <zeebe:ioMapping>
+            <zeebe:input source="=agentDecision" target="toolCall" />
+          </zeebe:ioMapping>
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_Gateway_To_ToolSubprocess</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToolSubprocess_To_UpdateContext</bpmn:outgoing>
+        
+        <!-- Tool: jq - JSON Processing -->
+        <bpmn:serviceTask id="Tool_Jq" name="jq: JSON Processor" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+            <zeebe:ioMapping>
+              <zeebe:input source="execute" target="action" />
+              <zeebe:input source="default" target="tenantId" />
+              <zeebe:input source="command" target="executionMode" />
+              <zeebe:input source="jq" target="selectedTool" />
+              <zeebe:input source="=toolCall.arguments" target="commandArguments" />
+              <zeebe:input source="=&quot;jq &quot; + toolCall.arguments" target="command" />
+              <zeebe:input source="=[&quot;jq&quot;]" target="allowedTools" />
+              <zeebe:input source="=if toolCall.input_data != null then toolCall.input_data else &quot;&quot;" target="inputData" />
+              <zeebe:input source="NONE" target="networkAccess" />
+              <zeebe:input source="30" target="timeoutSeconds" />
+              <zeebe:input source="256" target="memoryLimitMb" />
+            </zeebe:ioMapping>
+            <zeebe:taskHeaders>
+              <zeebe:header key="resultVariable" value="toolOutput" />
+            </zeebe:taskHeaders>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+        
+        <!-- Tool: yq - YAML Processing -->
+        <bpmn:serviceTask id="Tool_Yq" name="yq: YAML Processor" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+            <zeebe:ioMapping>
+              <zeebe:input source="execute" target="action" />
+              <zeebe:input source="default" target="tenantId" />
+              <zeebe:input source="command" target="executionMode" />
+              <zeebe:input source="yq" target="selectedTool" />
+              <zeebe:input source="=toolCall.arguments" target="commandArguments" />
+              <zeebe:input source="=&quot;yq &quot; + toolCall.arguments" target="command" />
+              <zeebe:input source="=[&quot;yq&quot;]" target="allowedTools" />
+              <zeebe:input source="=if toolCall.input_data != null then toolCall.input_data else &quot;&quot;" target="inputData" />
+              <zeebe:input source="NONE" target="networkAccess" />
+              <zeebe:input source="30" target="timeoutSeconds" />
+              <zeebe:input source="256" target="memoryLimitMb" />
+            </zeebe:ioMapping>
+            <zeebe:taskHeaders>
+              <zeebe:header key="resultVariable" value="toolOutput" />
+            </zeebe:taskHeaders>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+        
+        <!-- Tool: curl - HTTP Requests -->
+        <bpmn:serviceTask id="Tool_Curl" name="curl: HTTP Client" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+            <zeebe:ioMapping>
+              <zeebe:input source="execute" target="action" />
+              <zeebe:input source="development" target="tenantId" />
+              <zeebe:input source="command" target="executionMode" />
+              <zeebe:input source="curl" target="selectedTool" />
+              <zeebe:input source="=&quot;-s &quot; + toolCall.arguments" target="commandArguments" />
+              <zeebe:input source="=&quot;curl -s &quot; + toolCall.arguments" target="command" />
+              <zeebe:input source="=[&quot;curl&quot;]" target="allowedTools" />
+              <zeebe:input source="RESTRICTED" target="networkAccess" />
+              <zeebe:input source="60" target="timeoutSeconds" />
+              <zeebe:input source="256" target="memoryLimitMb" />
+            </zeebe:ioMapping>
+            <zeebe:taskHeaders>
+              <zeebe:header key="resultVariable" value="toolOutput" />
+            </zeebe:taskHeaders>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+        
+        <!-- Tool: kubectl - Kubernetes Queries -->
+        <bpmn:serviceTask id="Tool_Kubectl" name="kubectl: K8s Query" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+            <zeebe:ioMapping>
+              <zeebe:input source="execute" target="action" />
+              <zeebe:input source="monitoring" target="tenantId" />
+              <zeebe:input source="command" target="executionMode" />
+              <zeebe:input source="kubectl" target="selectedTool" />
+              <zeebe:input source="=toolCall.arguments" target="commandArguments" />
+              <zeebe:input source="=&quot;kubectl &quot; + toolCall.arguments" target="command" />
+              <zeebe:input source="=[&quot;kubectl&quot;]" target="allowedTools" />
+              <zeebe:input source="INTERNAL" target="networkAccess" />
+              <zeebe:input source="60" target="timeoutSeconds" />
+              <zeebe:input source="256" target="memoryLimitMb" />
+            </zeebe:ioMapping>
+            <zeebe:taskHeaders>
+              <zeebe:header key="resultVariable" value="toolOutput" />
+            </zeebe:taskHeaders>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+        
+        <!-- Tool: Python - Script Execution -->
+        <bpmn:serviceTask id="Tool_Python" name="python: Script Runner" zeebe:modelerTemplate="io.camunda.connectors.SandboxCLI.v1" zeebe:modelerTemplateVersion="7">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+            <zeebe:ioMapping>
+              <zeebe:input source="execute" target="action" />
+              <zeebe:input source="default" target="tenantId" />
+              <zeebe:input source="script" target="executionMode" />
+              <zeebe:input source="safe-python3" target="selectedTool" />
+              <zeebe:input source="python" target="scriptLanguage" />
+              <zeebe:input source="=toolCall.arguments" target="scriptContent" />
+              <zeebe:input source="=[&quot;safe-python3&quot;]" target="allowedTools" />
+              <zeebe:input source="=if toolCall.input_data != null then toolCall.input_data else &quot;&quot;" target="inputData" />
+              <zeebe:input source="NONE" target="networkAccess" />
+              <zeebe:input source="30" target="timeoutSeconds" />
+              <zeebe:input source="256" target="memoryLimitMb" />
+            </zeebe:ioMapping>
+            <zeebe:taskHeaders>
+              <zeebe:header key="resultVariable" value="toolOutput" />
+            </zeebe:taskHeaders>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+        
+        <bpmn:completionCondition>true</bpmn:completionCondition>
+      </bpmn:adHocSubProcess>
+      
+      <!-- Update context with tool result -->
+      <bpmn:scriptTask id="Task_UpdateContext" name="Update Context">
+        <bpmn:extensionElements>
+          <zeebe:script expression="={
+            toolResults: append(toolResults, {
+              &quot;tool&quot;: agentDecision.tool,
+              &quot;arguments&quot;: agentDecision.arguments,
+              &quot;output&quot;: if toolOutput.success then toolOutput.stdout else &quot;Error: &quot; + toolOutput.stderr,
+              &quot;success&quot;: toolOutput.success
+            })
+          }" resultVariable="contextUpdate" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_ToolSubprocess_To_UpdateContext</bpmn:incoming>
+        <bpmn:outgoing>Flow_UpdateContext_To_LoopBack</bpmn:outgoing>
+      </bpmn:scriptTask>
+      
+      <!-- Loop back to think again -->
+      <bpmn:intermediateThrowEvent id="Event_LoopBack" name="Continue Loop">
+        <bpmn:incoming>Flow_UpdateContext_To_LoopBack</bpmn:incoming>
+        <bpmn:outgoing>Flow_LoopBack_To_Think</bpmn:outgoing>
+        <bpmn:linkEventDefinition id="LinkEvent_LoopBack" name="BackToThink" />
+      </bpmn:intermediateThrowEvent>
+      
+      <bpmn:intermediateCatchEvent id="Event_LoopCatch" name="Back to Think">
+        <bpmn:outgoing>Flow_LoopCatch_To_Think</bpmn:outgoing>
+        <bpmn:linkEventDefinition id="LinkEvent_LoopCatch" name="BackToThink" />
+      </bpmn:intermediateCatchEvent>
+      
+      <!-- Max iterations reached - force final answer -->
+      <bpmn:scriptTask id="Task_ForceAnswer" name="Force Final Answer">
+        <bpmn:extensionElements>
+          <zeebe:script expression="={
+            finalResponse: &quot;I reached the maximum number of iterations. Based on my analysis: &quot; + 
+              (for result in toolResults return result.tool + &quot;: &quot; + substring(result.output, 1, 200))
+          }" resultVariable="forcedAnswer" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_Gateway_To_MaxIterations</bpmn:incoming>
+        <bpmn:outgoing>Flow_ForceAnswer_To_End</bpmn:outgoing>
+      </bpmn:scriptTask>
+      
+      <!-- Store final answer -->
+      <bpmn:scriptTask id="Task_StoreFinalAnswer" name="Store Final Answer">
+        <bpmn:extensionElements>
+          <zeebe:script expression="={
+            finalResponse: agentDecision.answer,
+            agentState: &quot;completed&quot;
+          }" resultVariable="finalResult" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_Gateway_To_End</bpmn:incoming>
+        <bpmn:outgoing>Flow_StoreFinal_To_End</bpmn:outgoing>
+      </bpmn:scriptTask>
+      
+      <bpmn:endEvent id="AgentLoop_End" name="Loop Complete">
+        <bpmn:incoming>Flow_StoreFinal_To_End</bpmn:incoming>
+        <bpmn:incoming>Flow_ForceAnswer_To_End</bpmn:incoming>
+      </bpmn:endEvent>
+      
+      <!-- Sequence Flows within subprocess -->
+      <bpmn:sequenceFlow id="Flow_AgentLoop_Start_To_Think" sourceRef="AgentLoop_Start" targetRef="Task_AgentThink" />
+      <bpmn:sequenceFlow id="Flow_Think_To_ParseDecision" sourceRef="Task_AgentThink" targetRef="Task_ParseDecision" />
+      <bpmn:sequenceFlow id="Flow_ParseDecision_To_Gateway" sourceRef="Task_ParseDecision" targetRef="Gateway_Decision" />
+      <bpmn:sequenceFlow id="Flow_Gateway_To_ToolSubprocess" sourceRef="Gateway_Decision" targetRef="ToolExecutionSubprocess">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=agentDecision.action = "use_tool" and currentIteration &lt; maxIterations</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_Gateway_To_End" sourceRef="Gateway_Decision" targetRef="Task_StoreFinalAnswer">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=agentDecision.action = "final_answer"</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_Gateway_To_MaxIterations" sourceRef="Gateway_Decision" targetRef="Task_ForceAnswer">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=currentIteration &gt;= maxIterations</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="Flow_ToolSubprocess_To_UpdateContext" sourceRef="ToolExecutionSubprocess" targetRef="Task_UpdateContext" />
+      <bpmn:sequenceFlow id="Flow_UpdateContext_To_LoopBack" sourceRef="Task_UpdateContext" targetRef="Event_LoopBack" />
+      <bpmn:sequenceFlow id="Flow_LoopBack_To_Think" sourceRef="Event_LoopBack" targetRef="Task_AgentThink" />
+      <bpmn:sequenceFlow id="Flow_LoopCatch_To_Think" sourceRef="Event_LoopCatch" targetRef="Task_AgentThink" />
+      <bpmn:sequenceFlow id="Flow_StoreFinal_To_End" sourceRef="Task_StoreFinalAnswer" targetRef="AgentLoop_End" />
+      <bpmn:sequenceFlow id="Flow_ForceAnswer_To_End" sourceRef="Task_ForceAnswer" targetRef="AgentLoop_End" />
+    </bpmn:subProcess>
+    
+    <!-- Format and return response to user -->
+    <bpmn:serviceTask id="Task_FormatResponse" name="Format Response">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="io.camunda:sandbox-cli:1" />
+        <zeebe:ioMapping>
+          <zeebe:input source="execute" target="action" />
+          <zeebe:input source="default" target="tenantId" />
+          <zeebe:input source="script" target="executionMode" />
+          <zeebe:input source="safe-python3" target="selectedTool" />
+          <zeebe:input source="python" target="scriptLanguage" />
+          <zeebe:input source="import json
+from datetime import datetime
+
+data = json.loads(input())
+
+response = {
+    'answer': data.get('finalResponse', 'No response generated'),
+    'tools_used': len(data.get('toolResults', [])),
+    'iterations': data.get('currentIteration', 0),
+    'timestamp': datetime.now().isoformat(),
+    'tool_summary': [
+        {'tool': r['tool'], 'success': r['success']} 
+        for r in data.get('toolResults', [])
+    ]
+}
+
+print(json.dumps(response, indent=2))" target="scriptContent" />
+          <zeebe:input source="=[&quot;safe-python3&quot;]" target="allowedTools" />
+          <zeebe:input source="={
+            &quot;finalResponse&quot;: finalResponse,
+            &quot;toolResults&quot;: toolResults,
+            &quot;currentIteration&quot;: currentIteration
+          }" target="inputData" />
+          <zeebe:input source="NONE" target="networkAccess" />
+          <zeebe:input source="30" target="timeoutSeconds" />
+          <zeebe:input source="256" target="memoryLimitMb" />
+        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <zeebe:header key="resultVariable" value="formattedResponse" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_AgentLoop_To_Response</bpmn:incoming>
+      <bpmn:outgoing>Flow_Response_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <bpmn:endEvent id="EndEvent" name="Response Sent">
+      <bpmn:incoming>Flow_Response_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <!-- Main Process Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_Start_To_Init" sourceRef="StartEvent" targetRef="Task_InitAgent" />
+    <bpmn:sequenceFlow id="Flow_Init_To_AgentLoop" sourceRef="Task_InitAgent" targetRef="AgentLoop" />
+    <bpmn:sequenceFlow id="Flow_AgentLoop_To_Response" sourceRef="AgentLoop" targetRef="Task_FormatResponse" />
+    <bpmn:sequenceFlow id="Flow_Response_To_End" sourceRef="Task_FormatResponse" targetRef="EndEvent" />
+    
+  </bpmn:process>
+  
+  <!-- Diagram Information -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="agent-with-tools">
+      
+      <!-- Start Event -->
+      <bpmndi:BPMNShape id="StartEvent_di" bpmnElement="StartEvent">
+        <dc:Bounds x="152" y="282" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="135" y="325" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      
+      <!-- Init Agent -->
+      <bpmndi:BPMNShape id="Task_InitAgent_di" bpmnElement="Task_InitAgent">
+        <dc:Bounds x="240" y="260" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Agent Loop Subprocess -->
+      <bpmndi:BPMNShape id="AgentLoop_di" bpmnElement="AgentLoop" isExpanded="true">
+        <dc:Bounds x="390" y="80" width="900" height="480" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Elements inside Agent Loop -->
+      <bpmndi:BPMNShape id="AgentLoop_Start_di" bpmnElement="AgentLoop_Start">
+        <dc:Bounds x="420" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Task_AgentThink_di" bpmnElement="Task_AgentThink">
+        <dc:Bounds x="490" y="260" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Task_ParseDecision_di" bpmnElement="Task_ParseDecision">
+        <dc:Bounds x="620" y="260" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Gateway_Decision_di" bpmnElement="Gateway_Decision" isMarkerVisible="true">
+        <dc:Bounds x="755" y="275" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="745" y="332" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      
+      <!-- Ad-hoc Subprocess for Tools -->
+      <bpmndi:BPMNShape id="ToolExecutionSubprocess_di" bpmnElement="ToolExecutionSubprocess" isExpanded="true">
+        <dc:Bounds x="840" y="100" width="420" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Tools inside Ad-hoc Subprocess -->
+      <bpmndi:BPMNShape id="Tool_Jq_di" bpmnElement="Tool_Jq">
+        <dc:Bounds x="860" y="130" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Tool_Yq_di" bpmnElement="Tool_Yq">
+        <dc:Bounds x="980" y="130" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Tool_Curl_di" bpmnElement="Tool_Curl">
+        <dc:Bounds x="1100" y="130" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Tool_Kubectl_di" bpmnElement="Tool_Kubectl">
+        <dc:Bounds x="860" y="210" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <bpmndi:BPMNShape id="Tool_Python_di" bpmnElement="Tool_Python">
+        <dc:Bounds x="980" y="210" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Update Context -->
+      <bpmndi:BPMNShape id="Task_UpdateContext_di" bpmnElement="Task_UpdateContext">
+        <dc:Bounds x="1000" y="360" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Loop Events -->
+      <bpmndi:BPMNShape id="Event_LoopBack_di" bpmnElement="Event_LoopBack">
+        <dc:Bounds x="912" y="382" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="895" y="425" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      
+      <!-- Store Final Answer -->
+      <bpmndi:BPMNShape id="Task_StoreFinalAnswer_di" bpmnElement="Task_StoreFinalAnswer">
+        <dc:Bounds x="840" y="460" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Force Answer -->
+      <bpmndi:BPMNShape id="Task_ForceAnswer_di" bpmnElement="Task_ForceAnswer">
+        <dc:Bounds x="1000" y="460" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- Agent Loop End -->
+      <bpmndi:BPMNShape id="AgentLoop_End_di" bpmnElement="AgentLoop_End">
+        <dc:Bounds x="1202" y="482" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1183" y="525" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      
+      <!-- Format Response -->
+      <bpmndi:BPMNShape id="Task_FormatResponse_di" bpmnElement="Task_FormatResponse">
+        <dc:Bounds x="1340" y="260" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      
+      <!-- End Event -->
+      <bpmndi:BPMNShape id="EndEvent_di" bpmnElement="EndEvent">
+        <dc:Bounds x="1492" y="282" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1472" y="325" width="77" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      
+      <!-- Sequence Flow Edges -->
+      <bpmndi:BPMNEdge id="Flow_Start_To_Init_di" bpmnElement="Flow_Start_To_Init">
+        <di:waypoint x="188" y="300" />
+        <di:waypoint x="240" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Init_To_AgentLoop_di" bpmnElement="Flow_Init_To_AgentLoop">
+        <di:waypoint x="340" y="300" />
+        <di:waypoint x="390" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_AgentLoop_Start_To_Think_di" bpmnElement="Flow_AgentLoop_Start_To_Think">
+        <di:waypoint x="456" y="300" />
+        <di:waypoint x="490" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Think_To_ParseDecision_di" bpmnElement="Flow_Think_To_ParseDecision">
+        <di:waypoint x="590" y="300" />
+        <di:waypoint x="620" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_ParseDecision_To_Gateway_di" bpmnElement="Flow_ParseDecision_To_Gateway">
+        <di:waypoint x="720" y="300" />
+        <di:waypoint x="755" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Gateway_To_ToolSubprocess_di" bpmnElement="Flow_Gateway_To_ToolSubprocess">
+        <di:waypoint x="780" y="275" />
+        <di:waypoint x="780" y="200" />
+        <di:waypoint x="840" y="200" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Gateway_To_End_di" bpmnElement="Flow_Gateway_To_End">
+        <di:waypoint x="780" y="325" />
+        <di:waypoint x="780" y="500" />
+        <di:waypoint x="840" y="500" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Gateway_To_MaxIterations_di" bpmnElement="Flow_Gateway_To_MaxIterations">
+        <di:waypoint x="805" y="300" />
+        <di:waypoint x="1050" y="300" />
+        <di:waypoint x="1050" y="460" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_ToolSubprocess_To_UpdateContext_di" bpmnElement="Flow_ToolSubprocess_To_UpdateContext">
+        <di:waypoint x="1050" y="300" />
+        <di:waypoint x="1050" y="360" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_UpdateContext_To_LoopBack_di" bpmnElement="Flow_UpdateContext_To_LoopBack">
+        <di:waypoint x="1000" y="400" />
+        <di:waypoint x="948" y="400" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_LoopBack_To_Think_di" bpmnElement="Flow_LoopBack_To_Think">
+        <di:waypoint x="912" y="400" />
+        <di:waypoint x="540" y="400" />
+        <di:waypoint x="540" y="340" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_StoreFinal_To_End_di" bpmnElement="Flow_StoreFinal_To_End">
+        <di:waypoint x="940" y="500" />
+        <di:waypoint x="1202" y="500" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_ForceAnswer_To_End_di" bpmnElement="Flow_ForceAnswer_To_End">
+        <di:waypoint x="1100" y="500" />
+        <di:waypoint x="1202" y="500" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_AgentLoop_To_Response_di" bpmnElement="Flow_AgentLoop_To_Response">
+        <di:waypoint x="1290" y="300" />
+        <di:waypoint x="1340" y="300" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow_Response_To_End_di" bpmnElement="Flow_Response_To_End">
+        <di:waypoint x="1440" y="300" />
+        <di:waypoint x="1492" y="300" />
+      </bpmndi:BPMNEdge>
+      
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  
+</bpmn:definitions>
